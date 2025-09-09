@@ -3,6 +3,8 @@ const $ = (s) => document.querySelector(s);
 const mount = $("#mount");
 const q = $("#q");
 const bodySel = $("#body");
+const levelSel = $("#level");     // NEW
+const regionSel = $("#region");   // NEW
 const windowSel = $("#window");
 const updated = $("#updated");
 const toggleAdminBtn = $("#toggleAdmin");
@@ -15,24 +17,22 @@ const importJsonInp = $("#importJson");
 
 // ---------- Admin & Storage ----------
 const ADMIN = { enabled: false };
-
-// localStorage keys
-const LSK_USER_ITEMS = "recruit_bodywise_userItems_v2";
+const LSK_USER_ITEMS = "recruit_bodywise_userItems_v3";
 const LSK_USER_BODIES = "recruit_bodywise_userBodies_v1";
-const LSK_OVERRIDES   = "recruit_bodywise_overrides_v1";
+const LSK_OVERRIDES   = "recruit_bodywise_overrides_v2";
 const LSK_DELETIONS   = "recruit_bodywise_deletions_v1";
 
 const getJSON = (k, d) => { try { return JSON.parse(localStorage.getItem(k) || JSON.stringify(d)); } catch { return d; } };
 const setJSON = (k, v) => localStorage.setItem(k, JSON.stringify(v));
 
-function getUserItems(){ return getJSON(LSK_USER_ITEMS, []); }
-function setUserItems(v){ setJSON(LSK_USER_ITEMS, v); }
-function getUserBodies(){ return getJSON(LSK_USER_BODIES, []); }
-function setUserBodies(v){ setJSON(LSK_USER_BODIES, v); }
-function getOverrides(){ return getJSON(LSK_OVERRIDES, {}); }
-function setOverrides(v){ setJSON(LSK_OVERRIDES, v); }
-function getDeletions(){ return getJSON(LSK_DELETIONS, []); }
-function setDeletions(v){ setJSON(LSK_DELETIONS, v); }
+const getUserItems = () => getJSON(LSK_USER_ITEMS, []);
+const setUserItems = (v) => setJSON(LSK_USER_ITEMS, v);
+const getUserBodies = () => getJSON(LSK_USER_BODIES, []);
+const setUserBodies = (v) => setJSON(LSK_USER_BODIES, v);
+const getOverrides  = () => getJSON(LSK_OVERRIDES, {});
+const setOverrides  = (v) => setJSON(LSK_OVERRIDES, v);
+const getDeletions  = () => getJSON(LSK_DELETIONS, []);
+const setDeletions  = (v) => setJSON(LSK_DELETIONS, v);
 
 // ---------- Official allowlist ----------
 const allowedHosts = new Set([
@@ -44,24 +44,38 @@ const allowedHosts = new Set([
 ]);
 
 // ---------- Data ----------
-let STATIC = []; // from data/exams.json
+let STATIC = [];
 async function loadStatic(){
   try{
     const res = await fetch("./data/exams.json", { cache: "no-store" });
     STATIC = await res.json();
-  } catch(e){
-    console.warn("Failed to load exams.json", e);
-    STATIC = [];
-  }
+  } catch { STATIC = []; }
+}
+
+// Fallback inference for legacy records without level/region
+const STATE_MAP = {
+  "MPSC":"Maharashtra","BPSC":"Bihar","TNPSC":"Tamil Nadu","RPSC":"Rajasthan","GPSC":"Gujarat",
+  "KPSC":"Karnataka","WBPSC":"West Bengal","OPSC":"Odisha","JKPSC":"Jammu & Kashmir",
+  "HPSC":"Haryana","PPSC":"Punjab","JPSC":"Jharkhand","TSPSC":"Telangana","UPPSC":"Uttar Pradesh"
+};
+function inferLevel(body){
+  if(!body) return "central";
+  const b = body.toUpperCase();
+  if(["SSC","UPSC","IBPS","RRB"].includes(b)) return "central";
+  if(STATE_MAP[b]) return "state";
+  return "local"; // unknown bodies default to local (can edit in UI)
+}
+function inferRegion(body){
+  const b = (body||"").toUpperCase();
+  return STATE_MAP[b] || "";
 }
 
 // apply overrides/deletions to shipped items
 function normalizedStatic(){
-  const ov = getOverrides();
-  const del = new Set(getDeletions());
+  const ov = getOverrides(), del = new Set(getDeletions());
   return STATIC
     .filter(x => !del.has(x.id))
-    .map(x => ov[x.id] ? { ...x, ...ov[x.id], id: x.id } : x);
+    .map(x => ov[x.id] ? { ...x, ...ov[x.id], id:x.id } : x);
 }
 function normalizeItems(){ return [...normalizedStatic(), ...getUserItems()]; }
 function uniqueBodiesAcrossAll(){
@@ -69,40 +83,38 @@ function uniqueBodiesAcrossAll(){
   const customs = getUserBodies();
   return [...new Set([...fromItems, ...customs])].sort((a,b)=>a.localeCompare(b));
 }
+function uniqueRegions(items){
+  const r = new Set();
+  items.forEach(x=>{
+    const lvl = (x.level || inferLevel(x.body));
+    if(lvl === "state" || lvl === "local"){
+      const region = (x.region || inferRegion(x.body) || "").trim();
+      if(region) r.add(region);
+    }
+  });
+  return [...r].sort((a,b)=>a.localeCompare(b));
+}
 
-// ---------- Dates & rotation ----------
+// ---------- date helpers (Rotation-compatible) ----------
 function labelWindow(w){
   if(!w||!w.type) return "TBD";
   switch(w.type){
     case "date": return new Date(w.date+"T00:00:00").toLocaleDateString(undefined,{year:"numeric",month:"short",day:"2-digit"});
-    case "month": {
-      const [y,m]=w.month.split("-").map(Number);
-      const d=new Date(y, m-1, 1);
-      return d.toLocaleDateString(undefined,{year:"numeric",month:"long"});
-    }
+    case "month": { const [y,m]=w.month.split("-").map(Number); return new Date(y, m-1, 1).toLocaleDateString(undefined,{year:"numeric",month:"long"}); }
     case "quarter": return `${w.q} ${w.year}`;
     case "half": return `${w.half} ${w.year}`;
-    case "tbd": return "TBD";
     default: return "TBD";
   }
 }
 function sortKey(w){
   if(!w) return 9e12;
   if(w.type==="date") return +new Date(w.date+"T00:00:00");
-  if(w.type==="month"){
-    const [y,m]=w.month.split("-").map(Number);
-    return +new Date(y, m-1, 1);
-  }
-  if(w.type==="quarter"){
-    const qmap={Q1:0, Q2:3, Q3:6, Q4:9};
-    return +new Date(w.year, qmap[w.q]??0, 1);
-  }
-  if(w.type==="half"){
-    const hmap={H1:0, H2:6};
-    return +new Date(w.year, hmap[w.half]??0, 1);
-  }
+  if(w.type==="month"){ const [y,m]=w.month.split("-").map(Number); return +new Date(y, m-1, 1); }
+  if(w.type==="quarter"){ const qmap={Q1:0,Q2:3,Q3:6,Q4:9}; return +new Date(w.year, qmap[w.q]??0, 1); }
+  if(w.type==="half"){ const hmap={H1:0,H2:6}; return +new Date(w.year, hmap[w.half]??0, 1); }
   return 9e12;
 }
+// Rotation helpers (kept compact)
 function approxDateFromWindow(w){
   if(!w) return null;
   if(w.type==="date") return new Date(w.date+"T09:00:00");
@@ -122,31 +134,21 @@ function historyDates(item){
   const arr = Array.isArray(item.history) ? item.history : [];
   return arr.map(parseHistoryDate).filter(d=>d && isFinite(+d)).sort((a,b)=>a-b);
 }
-function yearsBetween(a,b){
-  const ms = Math.abs(+b - +a);
-  return ms / (365.25*24*3600*1000);
-}
-function fmtYears(y){
-  if(y==null || !isFinite(y)) return "—";
-  if(y<1) return `${Math.round(y*12)} mo`;
-  return `${(Math.round(y*10)/10).toFixed(1)} y`;
-}
+function yearsBetween(a,b){ return Math.abs(+b - +a) / (365.25*24*3600*1000); }
+function fmtYears(y){ if(!isFinite(y)) return "—"; return y<1 ? `${Math.round(y*12)} mo` : `${(Math.round(y*10)/10).toFixed(1)} y`; }
 function rotationInfo(item){
   const next = approxDateFromWindow(item.window);
-  if(!next) return {next:null,last:null,gap:null,avg:null};
+  if(!next) return {gap:null, avg:null, last:null, next:null};
   const hist = historyDates(item);
-  if(!hist.length) return {next,last:null,gap:null,avg:null};
-  // last past <= next (or just the latest past)
-  let last = hist.filter(d => d <= next).slice(-1)[0] || hist.slice(-1)[0];
+  if(!hist.length) return {gap:null, avg:null, last:null, next};
+  const last = hist.filter(d => d <= next).slice(-1)[0] || hist.slice(-1)[0];
   const gap = yearsBetween(last, next);
-  // average of consecutive gaps
   let avg = null;
   if(hist.length>=2){
-    const diffs = [];
-    for(let i=1;i<hist.length;i++) diffs.push(yearsBetween(hist[i-1], hist[i]));
+    const diffs = []; for(let i=1;i<hist.length;i++) diffs.push(yearsBetween(hist[i-1], hist[i]));
     avg = diffs.reduce((a,b)=>a+b,0)/diffs.length;
   }
-  return {next,last,gap,avg};
+  return {gap, avg, last, next};
 }
 
 // ---------- misc ----------
@@ -159,54 +161,69 @@ function makeICS(item){
   const s = sortKey(item.window);
   const d = isFinite(s)? new Date(s) : new Date();
   const y=d.getFullYear(), m=String(d.getMonth()+1).padStart(2,"0");
-  const day = String(item.window?.type==="date" ? new Date(item.window.date).getDate() : 1).padStart(2,"0");
-  const start = `${y}${m}${day}T090000`;
-  const end   = `${y}${m}${day}T100000`;
+  const day=String(item.window?.type==="date" ? new Date(item.window.date).getDate() : 1).padStart(2,"0");
+  const start = `${y}${m}${day}T090000`, end = `${y}${m}${day}T100000`;
   const summary = `${item.body}: ${item.exam} (${item.cycle||""}) — Tentative Notification`;
   const desc = `Tentative notification window: ${labelWindow(item.window)}. Verify on official site: ${item.official}`;
   const ics = [
-    "BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//Recruit Bodywise//EN",
-    "BEGIN:VEVENT",
-    `UID:${item.id}@recruit-bodywise.local`,
-    `DTSTAMP:${start}`,`DTSTART:${start}`,`DTEND:${end}`,
-    `SUMMARY:${summary}`,`DESCRIPTION:${desc.replace(/\n/g," ")}`,
-    "END:VEVENT","END:VCALENDAR"
+    "BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//Recruit Bodywise//EN","BEGIN:VEVENT",
+    `UID:${item.id}@recruit-bodywise.local`,`DTSTAMP:${start}`,`DTSTART:${start}`,`DTEND:${end}`,
+    `SUMMARY:${summary}`,`DESCRIPTION:${desc.replace(/\n/g," ")}`, "END:VEVENT","END:VCALENDAR"
   ].join("\r\n");
-  const blob = new Blob([ics], {type:"text/calendar"});
-  return URL.createObjectURL(blob);
+  return URL.createObjectURL(new Blob([ics], {type:"text/calendar"}));
 }
 function toCSV(rows){
   const esc = s => `"${String(s??"").replace(/"/g,'""')}"`;
-  const head = ["Body","Exam","Cycle","Window","Rotation (next gap)","Avg rotation","Official","Notes"];
+  const head = ["Body","Level","State/UT","Exam","Cycle","Rotation (next gap)","Avg rotation","Window","Official","Notes"];
   const lines = [head.map(esc).join(",")];
   rows.forEach(r=>{
-    const ri = rotationInfo(r);
-    lines.push([
-      r.body, r.exam, r.cycle||"", labelWindow(r.window),
-      fmtYears(ri.gap), fmtYears(ri.avg), r.official||"", r.notes||""
-    ].map(esc).join(","));
+    const lvl = r.level || inferLevel(r.body);
+    const reg = r.region || (lvl!=="central" ? inferRegion(r.body) : "");
+    const rot = rotationInfo(r);
+    lines.push([r.body,lvl,reg||"",r.exam,r.cycle||"",fmtYears(rot.gap),fmtYears(rot.avg),labelWindow(r.window),r.official||"",r.notes||""].map(esc).join(","));
   });
   return lines.join("\r\n");
 }
 
 // ---------- Rendering ----------
-const currentFilters = { body: "__all__" };
+const currentFilters = { body: "__all__", level: "__all__", region: "__all__" };
+
+function applyFilters(list){
+  return list.filter(x=>{
+    if(windowSel.value!=="__all__" && (x.window?.type||"tbd")!==windowSel.value) return false;
+    if(bodySel.value!=="__all__" && x.body!==bodySel.value) return false;
+
+    const lvl = (x.level || inferLevel(x.body));
+    if(levelSel.value!=="__all__" && lvl !== levelSel.value) return false;
+
+    if(regionSel.value!=="__all__"){
+      const reg = (x.region || inferRegion(x.body) || "").toLowerCase();
+      if(!reg || reg !== regionSel.value.toLowerCase()) return false;
+    }
+
+    const s = `${x.body} ${x.exam} ${x.cycle||""} ${x.notes||""}`.toLowerCase();
+    return s.includes(q.value.trim().toLowerCase());
+  });
+}
+
 function render(){
-  const items = normalizeItems()
-    .filter(x=>{
-      if(windowSel.value!=="__all__" && (x.window?.type||"tbd")!==windowSel.value) return false;
-      if(bodySel.value!=="__all__" && x.body!==bodySel.value) return false;
-      const s = `${x.body} ${x.exam} ${x.cycle||""} ${x.notes||""}`.toLowerCase();
-      return s.includes(q.value.trim().toLowerCase());
-    })
+  const items = applyFilters(normalizeItems())
     .sort((a,b)=> sortKey(a.window)-sortKey(b.window) || a.body.localeCompare(b.body) || a.exam.localeCompare(b.exam));
 
-  const groups = {};
-  items.forEach(it => { (groups[it.body] ||= []).push(it); });
-
+  // dropdowns
   const bodies = uniqueBodiesAcrossAll();
   bodySel.innerHTML = `<option value="__all__">All bodies</option>` + bodies.map(b=>`<option value="${b}">${b}</option>`).join("");
   if(currentFilters.body && bodies.includes(currentFilters.body)) bodySel.value=currentFilters.body;
+
+  // level + region options
+  levelSel.value = currentFilters.level;
+  const regions = uniqueRegions(normalizeItems());
+  regionSel.innerHTML = `<option value="__all__">All States/UT</option>` + regions.map(r=>`<option value="${r}">${r}</option>`).join("");
+  if(currentFilters.region && regions.includes(currentFilters.region)) regionSel.value=currentFilters.region;
+
+  // group by body
+  const groups = {};
+  items.forEach(it => { (groups[it.body] ||= []).push(it); });
 
   if(!bodies.length){
     mount.innerHTML = `<div class="empty">No data yet. Click <b>Add Body</b> then add exams in Admin Mode.</div>`;
@@ -217,6 +234,7 @@ function render(){
   const overrides = getOverrides();
 
   bodies.forEach(groupName=>{
+    // respect body filter
     if(bodySel.value !== "__all__" && groupName !== bodySel.value) return;
 
     const section = document.createElement("section");
@@ -230,7 +248,7 @@ function render(){
     table.className = "table";
     table.innerHTML = `
       <thead><tr>
-        <th>Exam</th><th>Cycle</th><th>Rotation</th><th>Window (Tentative)</th><th>Official</th><th style="min-width:260px">Actions</th>
+        <th>Exam</th><th>Cycle</th><th>Level</th><th>Rotation</th><th>Window (Tentative)</th><th>Official</th><th style="min-width:260px">Actions</th>
       </tr></thead>
       <tbody></tbody>
     `;
@@ -242,7 +260,9 @@ function render(){
       const overridden = !!overrides[item.id];
       const isUser = item.id?.startsWith?.("user-");
       const ri = rotationInfo(item);
-
+      const lvl = item.level || inferLevel(item.body);
+      const reg = item.region || (lvl!=="central" ? inferRegion(item.body) : "");
+      const levelBadge = lvl==="central" ? "Central" : (lvl==="state" ? `State${reg? " — "+reg : ""}` : `Local${reg? " — "+reg : ""}`);
       const rotText = ri.gap ? `≈ ${fmtYears(ri.gap)}${ri.avg? ` (avg ${fmtYears(ri.avg)})`: ""}` : "—";
       const rotTitle = `Last: ${ri.last? ri.last.toLocaleDateString(): "—"} • Next: ${ri.next? ri.next.toLocaleDateString(): "—"}${ri.avg? ` • Avg: ${fmtYears(ri.avg)}`:""}`;
 
@@ -252,6 +272,7 @@ function render(){
           <div class="small">${item.notes? item.notes: ""} ${overridden ? `<span class="badge warn" title="Locally edited">Edited</span>` : ""}</div>
         </td>
         <td>${item.cycle||""}</td>
+        <td><span class="badge">${levelBadge}</span></td>
         <td title="${rotTitle}">${rotText}</td>
         <td>${labelWindow(item.window)}</td>
         <td>
@@ -298,43 +319,52 @@ function render(){
   mount.innerHTML = "";
   mount.appendChild(frag);
 
-  // Row action handlers
+  // Row actions
   mount.querySelectorAll("[data-act]").forEach(btn=>{
     btn.addEventListener("click", ()=>{
       const id = btn.getAttribute("data-id");
       const act = btn.getAttribute("data-act");
-      if(act==="delUser"){
-        setUserItems(getUserItems().filter(x=>x.id!==id)); render();
-      } else if(act==="editUser"){
-        const item = getUserItems().find(x=>x.id===id); if(item) openEditor(item, {mode:'user'});
-      } else if(act==="delStatic"){
-        const del = new Set(getDeletions()); del.add(id); setDeletions([...del]); render();
-      } else if(act==="editStatic"){
-        const item = normalizedStatic().find(x=>x.id===id); if(item) openEditor(item, {mode:'static'});
-      }
+      if(act==="delUser"){ setUserItems(getUserItems().filter(x=>x.id!==id)); render(); }
+      else if(act==="editUser"){ const item = getUserItems().find(x=>x.id===id); if(item) openEditor(item,{mode:'user'}); }
+      else if(act==="delStatic"){ const del = new Set(getDeletions()); del.add(id); setDeletions([...del]); render(); }
+      else if(act==="editStatic"){ const item = normalizedStatic().find(x=>x.id===id); if(item) openEditor(item,{mode:'static'}); }
     });
   });
 }
 
 // ---------- Editor ----------
-let CURRENT_CONTEXT = { mode: 'new' }; // 'new' | 'user' | 'static'
+let CURRENT_CONTEXT = { mode: 'new' };
 function setWindowSlots(type){
   editForm.querySelectorAll("[data-slot]").forEach(el=> el.style.display="none");
   const map = {date:"[data-slot='date']", month:"[data-slot='month']", quarter:"[data-slot='quarter']", half:"[data-slot='half']"};
-  const sel = map[type];
-  if(sel) editForm.querySelector(sel).style.display = "";
+  const sel = map[type]; if(sel) editForm.querySelector(sel).style.display = "";
 }
+function setLevelSlots(level){
+  const show = (level==="state" || level==="local");
+  const regionDiv = editForm.querySelector("[data-slot-level='region']");
+  if(regionDiv) regionDiv.style.display = show ? "" : "none";
+}
+
 function openEditor(seed={}, context={mode:'new'}){
   CURRENT_CONTEXT = context;
   $("#dlgTitle").textContent = seed.id ? "Edit entry" : "Add entry";
   editForm.reset();
+
   editForm.body.value = seed.body || "";
   editForm.exam.value = seed.exam || "";
   editForm.cycle.value = seed.cycle || "";
   editForm.official.value = seed.official || "";
   editForm.notes.value = seed.notes || "";
-  // prefill history
   editForm.history.value = Array.isArray(seed.history) ? seed.history.join(", ") : "";
+
+  // Level/Region
+  const lvl = seed.level || inferLevel(seed.body);
+  editForm.level.value = lvl;
+  editForm.region.value = seed.region || (lvl!=="central" ? inferRegion(seed.body) : "");
+  setLevelSlots(lvl);
+  editForm.level.addEventListener("change", e=> setLevelSlots(e.target.value), {once:true});
+
+  // Window
   const w = seed.window || {type:"date"};
   editForm.wtype.value = w.type || "date";
   setWindowSlots(w.type);
@@ -353,14 +383,17 @@ function openEditor(seed={}, context={mode:'new'}){
     const cycle = editForm.cycle.value.trim();
     const official = editForm.official.value.trim();
     const notes = editForm.notes.value.trim();
+    const level = editForm.level.value;
+    const region = (level==="state" || level==="local") ? (editForm.region.value||"").trim() : "";
+    const hist = editForm.history.value.split(",").map(s=>s.trim()).filter(Boolean);
     const wtype = editForm.wtype.value;
-    const hist = editForm.history.value.split(",").map(s=>s.trim()).filter(Boolean); // store as strings
 
     if(!body || !exam || !official){ alert("Body, Exam, and Official link are required."); return; }
     if(!isOfficial(official)){
       if(!confirm("This link does not look official (not gov.in/nic.in or allowlist). Keep anyway?")) return;
     }
-    const winObj = (()=> {
+
+    const window = (()=> {
       if(wtype==="date"){ if(!editForm.date.value) return {type:"tbd"}; return {type:"date", date: editForm.date.value}; }
       if(wtype==="month"){ if(!editForm.month.value) return {type:"tbd"}; return {type:"month", month: editForm.month.value}; }
       if(wtype==="quarter"){ return {type:"quarter", q: editForm.q.value, year: Number(editForm.qy.value)||2025}; }
@@ -371,17 +404,16 @@ function openEditor(seed={}, context={mode:'new'}){
     if(CURRENT_CONTEXT.mode === 'user' && seed.id){
       const arr = getUserItems();
       const idx = arr.findIndex(x=>x.id===seed.id);
-      if(idx>-1){ arr[idx] = { ...arr[idx], body, exam, cycle, window: winObj, official, notes, history: hist }; }
+      if(idx>-1){ arr[idx] = { ...arr[idx], body, exam, cycle, window, official, notes, level, region, history: hist }; }
       setUserItems(arr);
     } else if(CURRENT_CONTEXT.mode === 'static' && seed.id){
-      const ov = getOverrides();
-      ov[seed.id] = { body, exam, cycle, window: winObj, official, notes, history: hist };
+      const ov = getOverrides(); ov[seed.id] = { body, exam, cycle, window, official, notes, level, region, history: hist };
       setOverrides(ov);
       const dels = new Set(getDeletions()); if(dels.has(seed.id)){ dels.delete(seed.id); setDeletions([...dels]); }
     } else {
       const id = `user-${Date.now().toString(36)}`;
       const arr = getUserItems();
-      arr.push({ id, body, exam, cycle, window: winObj, official, notes, history: hist });
+      arr.push({ id, body, exam, cycle, window, official, notes, level, region, history: hist });
       setUserItems(arr);
     }
 
@@ -391,57 +423,55 @@ function openEditor(seed={}, context={mode:'new'}){
     editDlg.close(); render();
   };
 }
+
 editForm.wtype.addEventListener("change", (e)=> setWindowSlots(e.target.value));
 
 // ---------- Events ----------
 q.addEventListener("input", render);
 windowSel.addEventListener("change", render);
 bodySel.addEventListener("change", e=>{ currentFilters.body = e.target.value; render(); });
+
+levelSel.addEventListener("change", e=>{
+  currentFilters.level = e.target.value;
+  // when switching level, reset region if not State/Local
+  if(currentFilters.level === "__all__" || currentFilters.level === "central"){
+    currentFilters.region = "__all__"; regionSel.value="__all__";
+  }
+  render();
+});
+regionSel.addEventListener("change", e=>{ currentFilters.region = e.target.value; render(); });
+
 document.addEventListener("keydown", (ev)=>{ if(ev.key === "/"){ ev.preventDefault(); q.focus(); } });
 
 exportCsvBtn.addEventListener("click", ()=>{
-  const rows = normalizeItems()
-    .filter(x=>{
-      if(windowSel.value!=="__all__" && (x.window?.type||"tbd")!==windowSel.value) return false;
-      if(bodySel.value!=="__all__" && x.body!==bodySel.value) return false;
-      const s = `${x.body} ${x.exam} ${x.cycle||""} ${x.notes||""}`.toLowerCase();
-      return s.includes(q.value.trim().toLowerCase());
-    })
+  const rows = applyFilters(normalizeItems())
     .sort((a,b)=> sortKey(a.window)-sortKey(b.window) || a.body.localeCompare(b.body) || a.exam.localeCompare(b.exam));
   const csv = toCSV(rows);
-  const blob = new Blob([csv], {type:"text/csv"});
   const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
+  a.href = URL.createObjectURL(new Blob([csv], {type:"text/csv"}));
   a.download = "recruitment_notifications_bodywise.csv";
   a.click();
-  URL.revokeObjectURL(a.href);
 });
 
-// Export/Import full app data
 exportJsonBtn.addEventListener("click", ()=>{
   const payload = {
-    version: 3,
+    version: 4,
     userItems: getUserItems(),
     userBodies: getUserBodies(),
     overrides: getOverrides(),
     deletions: getDeletions()
   };
-  const blob = new Blob([JSON.stringify(payload, null, 2)], {type:"application/json"});
   const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(payload, null, 2)], {type:"application/json"}));
   a.download = "recruit-bodywise-appdata.json";
   a.click();
-  URL.revokeObjectURL(a.href);
 });
 importJsonInp.addEventListener("change", async (e)=>{
-  const f = e.target.files?.[0];
-  if(!f) return;
+  const f = e.target.files?.[0]; if(!f) return;
   try{
-    const txt = await f.text();
-    const data = JSON.parse(txt);
-    if(Array.isArray(data)){
-      setUserItems(data.map(o=> ({ id: o.id || `user-${Date.now().toString(36)}`, ...o })));
-    } else {
+    const data = JSON.parse(await f.text());
+    if(Array.isArray(data)){ setUserItems(data.map(o=> ({ id: o.id || `user-${Date.now().toString(36)}`, ...o }))); }
+    else{
       if(data.userItems) setUserItems(data.userItems);
       if(data.userBodies) setUserBodies(data.userBodies);
       if(data.overrides) setOverrides(data.overrides);
@@ -451,23 +481,19 @@ importJsonInp.addEventListener("change", async (e)=>{
   }catch(err){ alert("Import failed: " + err.message); }
 });
 
-// Add Body button
-if(addBodyBtn){
-  addBodyBtn.addEventListener("click", ()=>{
-    const name = prompt("Enter new Recruitment Body name (e.g., JKPSC, GPSC):");
-    if(!name) return;
-    const body = name.trim();
-    if(!body) return;
-    const set = new Set(uniqueBodiesAcrossAll());
-    if(set.has(body)) { alert("Body already exists."); return; }
-    setUserBodies([...getUserBodies(), body]);
-    if(ADMIN.enabled && confirm("Add an exam under this body now?")){
-      openEditor({ body }, {mode:'new'});
-    } else {
-      render();
-    }
-  });
-}
+addBodyBtn.addEventListener("click", ()=>{
+  const name = prompt("Enter new Recruitment Body name (e.g., JKPSC, GPSC):");
+  if(!name) return;
+  const body = name.trim(); if(!body) return;
+  const set = new Set(uniqueBodiesAcrossAll());
+  if(set.has(body)) { alert("Body already exists."); return; }
+  setUserBodies([...getUserBodies(), body]);
+  if(ADMIN.enabled && confirm("Add an exam under this body now?")){
+     openEditor({ body }, {mode:'new'});
+  } else {
+     render();
+  }
+});
 
 // Toggle Admin
 toggleAdminBtn.addEventListener("click", ()=>{
