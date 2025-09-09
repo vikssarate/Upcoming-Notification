@@ -22,7 +22,7 @@
     <input id="q" type="search" placeholder="Search exam / cycle / notes…" autocomplete="off" />
     <select id="body"><option value="__all__">All bodies</option></select>
 
-    <!-- NEW: Govt. Level filter -->
+    <!-- Govt. Level filter -->
     <select id="level">
       <option value="__all__">All levels</option>
       <option value="central">Central Govt.</option>
@@ -30,8 +30,19 @@
       <option value="local">Local Govt.</option>
     </select>
 
-    <!-- NEW: State/UT filter (used for State/Local) -->
+    <!-- State/UT filter (used for State/Local) -->
     <select id="region"><option value="__all__">All States/UT</option></select>
+
+    <!-- NEW: Local Type filter (used for Local) -->
+    <select id="localType">
+      <option value="__all__">All local types</option>
+      <option value="municipal_corporation">Municipal Corporation</option>
+      <option value="zilla_parishad">Zilla Parishad</option>
+      <option value="municipality">Municipality</option>
+      <option value="panchayat_samiti">Panchayat Samiti</option>
+      <option value="gram_panchayat">Gram Panchayat</option>
+      <option value="other">Other</option>
+    </select>
 
     <select id="window">
       <option value="__all__">Any window</option>
@@ -91,7 +102,7 @@
       <input name="cycle" placeholder="e.g., 2025, 2025–26">
     </div>
 
-    <!-- NEW: Level + Region (State/UT or Local area) -->
+    <!-- Level + Region (State/UT or Local area) -->
     <div>
       <label>Govt. Level</label>
       <select name="level">
@@ -103,6 +114,19 @@
     <div data-slot-level="region">
       <label>State/UT or Local area</label>
       <input name="region" placeholder="e.g., Maharashtra / BMC / Pune">
+    </div>
+
+    <!-- NEW: Local govt. type (visible only when Level = Local) -->
+    <div data-slot-level="orgtype" style="display:none">
+      <label>Local govt. type</label>
+      <select name="orgtype">
+        <option value="municipal_corporation">Municipal Corporation</option>
+        <option value="zilla_parishad">Zilla Parishad</option>
+        <option value="municipality">Municipality</option>
+        <option value="panchayat_samiti">Panchayat Samiti</option>
+        <option value="gram_panchayat">Gram Panchayat</option>
+        <option value="other">Other</option>
+      </select>
     </div>
 
     <div>
@@ -143,7 +167,6 @@
       </div>
     </div>
 
-    <!-- If you already added Rotation support earlier, keep this field; otherwise ignore -->
     <div class="full">
       <label>Past notifications (comma-separated)</label>
       <input name="history" placeholder="YYYY-MM-DD, YYYY-MM, or YYYY">
