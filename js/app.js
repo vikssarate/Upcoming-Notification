@@ -6,6 +6,7 @@ const bodySel = $("#body");
 const windowSel = $("#window");
 const updated = $("#updated");
 const toggleAdminBtn = $("#toggleAdmin");
+const addBodyBtn = $("#addBody");
 const editDlg = $("#editDlg");
 const editForm = $("#editForm");
 const exportCsvBtn = $("#exportCsv");
@@ -14,19 +15,37 @@ const importJsonInp = $("#importJson");
 
 // ---------- Admin & Storage ----------
 const ADMIN = { enabled: false };
-const LSK = "recruit_bodywise_userItems_v1";
+
+// localStorage keys
+const LSK_USER_ITEMS = "recruit_bodywise_userItems_v2";
+const LSK_USER_BODIES = "recruit_bodywise_userBodies_v1";
+const LSK_OVERRIDES   = "recruit_bodywise_overrides_v1";   // { id: {partial fields} }
+const LSK_DELETIONS   = "recruit_bodywise_deletions_v1";   // [ids]
+
+// helpers
+const getJSON = (k, d) => { try { return JSON.parse(localStorage.getItem(k) || JSON.stringify(d)); } catch { return d; } };
+const setJSON = (k, v) => localStorage.setItem(k, JSON.stringify(v));
+
+function getUserItems(){ return getJSON(LSK_USER_ITEMS, []); }
+function setUserItems(v){ setJSON(LSK_USER_ITEMS, v); }
+
+function getUserBodies(){ return getJSON(LSK_USER_BODIES, []); }
+function setUserBodies(v){ setJSON(LSK_USER_BODIES, v); }
+
+function getOverrides(){ return getJSON(LSK_OVERRIDES, {}); }
+function setOverrides(v){ setJSON(LSK_OVERRIDES, v); }
+
+function getDeletions(){ return getJSON(LSK_DELETIONS, []); }
+function setDeletions(v){ setJSON(LSK_DELETIONS, v); }
 
 // Allowlist for "official" domains. (Extend as needed.)
 const allowedHosts = new Set([
   "ssc.gov.in","upsc.gov.in","ibps.in","rrbcdg.gov.in",
   "mpsc.gov.in","bpsc.bih.nic.in","tnpsc.gov.in","psc.nic.in",
   "ppsc.gov.in","hpsc.gov.in","gpsc.gujarat.gov.in","kpsc.kar.nic.in",
-  "rpsc.rajasthan.gov.in","tspsc.gov.in","bpsc.bih.nic.in","wbpsc.gov.in",
-  "jkpsc.nic.in","opsc.gov.in","uppsc.up.nic.in","jpsc.gov.in",
+  "rpsc.rajasthan.gov.in","tspsc.gov.in","wbpsc.gov.in",
+  "jkpsc.nic.in","opsc.gov.in","uppsc.up.nic.in","jpsc.gov.in"
 ]);
-
-function getUserItems(){ try { return JSON.parse(localStorage.getItem(LSK) || "[]"); } catch { return []; } }
-function setUserItems(items){ localStorage.setItem(LSK, JSON.stringify(items)); }
 
 // ---------- Data ----------
 let STATIC = []; // from data/exams.json
@@ -41,12 +60,23 @@ async function loadStatic(){
   }
 }
 
-function normalizeItems(){
-  return [...STATIC, ...getUserItems()];
+// Apply local overrides/deletions to shipped (static) items
+function normalizedStatic(){
+  const ov = getOverrides();
+  const del = new Set(getDeletions());
+  return STATIC
+    .filter(x => !del.has(x.id))
+    .map(x => ov[x.id] ? { ...x, ...ov[x.id], id: x.id } : x);
 }
 
-function uniqueBodies(items){
-  return [...new Set(items.map(x=>x.body))].sort((a,b)=>a.localeCompare(b));
+function normalizeItems(){
+  return [...normalizedStatic(), ...getUserItems()];
+}
+
+function uniqueBodiesAcrossAll(){
+  const fromItems = [...new Set(normalizeItems().map(x=>x.body))];
+  const customs = getUserBodies();
+  return [...new Set([...fromItems, ...customs])].sort((a,b)=>a.localeCompare(b));
 }
 
 function labelWindow(w){
@@ -87,7 +117,6 @@ function hostFrom(url){
   try { return new URL(url).host.toLowerCase(); }
   catch { return ""; }
 }
-
 function isOfficial(url){
   const h = hostFrom(url);
   return h.endsWith(".gov.in") || h.endsWith(".nic.in") || allowedHosts.has(h);
@@ -143,42 +172,57 @@ function render(){
     })
     .sort((a,b)=> sortKey(a.window)-sortKey(b.window) || a.body.localeCompare(b.body) || a.exam.localeCompare(b.exam));
 
+  // Group actual items
   const groups = {};
   items.forEach(it => { (groups[it.body] ||= []).push(it); });
 
-  const bodies = uniqueBodies(normalizeItems());
+  // Inject body filter options (union with custom bodies)
+  const bodies = uniqueBodiesAcrossAll();
   bodySel.innerHTML = `<option value="__all__">All bodies</option>` + bodies.map(b=>`<option value="${b}">${b}</option>`).join("");
   if(currentFilters.body && bodies.includes(currentFilters.body)) bodySel.value=currentFilters.body;
 
-  if(!items.length){
-    mount.innerHTML = `<div class="empty">No matches. Try clearing filters.</div>`;
+  // Build UI sections for union of groups + custom bodies (so empty bodies show)
+  const unionBodies = bodies;
+  if(!unionBodies.length){
+    mount.innerHTML = `<div class="empty">No data yet. Click <b>Add Body</b> then add exams in Admin Mode.</div>`;
     return;
   }
 
   const frag = document.createDocumentFragment();
+  const overrides = getOverrides();
 
-  Object.keys(groups).sort((a,b)=>a.localeCompare(b)).forEach(groupName=>{
+  unionBodies.forEach(groupName=>{
+    // Skip empty group if filtered to another body
+    if(bodySel.value !== "__all__" && groupName !== bodySel.value) return;
+
     const section = document.createElement("section");
     section.className = "group";
+    const count = (groups[groupName]?.length || 0);
     const title = document.createElement("h2");
-    title.innerHTML = `<span>${groupName}</span><span class="small">${groups[groupName].length} item(s)</span>`;
+    title.innerHTML = `<span>${groupName}</span><span class="small">${count} item(s)</span>`;
     section.appendChild(title);
 
     const table = document.createElement("table");
     table.className = "table";
     table.innerHTML = `
       <thead><tr>
-        <th>Exam</th><th>Cycle</th><th>Window (Tentative)</th><th>Official</th><th style="min-width:230px">Actions</th>
+        <th>Exam</th><th>Cycle</th><th>Window (Tentative)</th><th>Official</th><th style="min-width:260px">Actions</th>
       </tr></thead>
       <tbody></tbody>
     `;
     const tbody = table.querySelector("tbody");
 
-    groups[groupName].forEach(item=>{
+    (groups[groupName] || []).forEach(item=>{
       const tr = document.createElement("tr");
       const officialOk = isOfficial(item.official);
+      const overridden = !!overrides[item.id];
+      const isUser = item.id?.startsWith?.("user-");
+
       tr.innerHTML = `
-        <td><div style="font-weight:600">${item.exam}</div><div class="small">${item.notes? item.notes: ""}</div></td>
+        <td>
+          <div style="font-weight:600">${item.exam}</div>
+          <div class="small">${item.notes? item.notes: ""} ${overridden ? `<span class="badge warn" title="Locally edited">Edited</span>` : ""}</div>
+        </td>
         <td>${item.cycle||""}</td>
         <td>${labelWindow(item.window)}</td>
         <td>
@@ -187,8 +231,8 @@ function render(){
         </td>
         <td class="row-actions">
           <a href="${makeICS(item)}" download="${item.id}.ics" title="Add to Calendar">Add to Calendar</a>
-          ${ADMIN.enabled && item.id.startsWith("user-") ? `<button data-act="edit" data-id="${item.id}" title="Edit (local)">Edit</button>` : ""}
-          ${ADMIN.enabled && item.id.startsWith("user-") ? `<button data-act="del" data-id="${item.id}" title="Delete (local)">Delete</button>` : ""}
+          ${ADMIN.enabled ? `<button data-act="${isUser ? 'editUser' : 'editStatic'}" data-id="${item.id}">Edit</button>` : ""}
+          ${ADMIN.enabled ? `<button data-act="${isUser ? 'delUser' : 'delStatic'}" data-id="${item.id}">Delete</button>` : ""}
         </td>
       `;
       tbody.appendChild(tr);
@@ -196,23 +240,50 @@ function render(){
 
     section.appendChild(table);
 
+    const hasItems = !!(groups[groupName]?.length);
+    if(!hasItems){
+      const empty = document.createElement("div");
+      empty.className = "empty";
+      empty.textContent = "No exams added for this body yet.";
+      section.appendChild(empty);
+    }
+
     if(ADMIN.enabled){
       const bar = document.createElement("div");
       bar.style = "display:flex; gap:8px; padding:10px 12px; background:#0f1427; border-top:1px solid var(--line)";
       const addBtn = document.createElement("button");
       addBtn.className = "btn";
       addBtn.textContent = `Add under ${groupName}`;
-      addBtn.onclick = ()=> openEditor({body:groupName});
+      addBtn.onclick = ()=> openEditor({body:groupName}, {mode:'new'});
+
       const resetBtn = document.createElement("button");
       resetBtn.className = "btn ghost";
-      resetBtn.textContent = "Reset local additions";
+      resetBtn.textContent = "Reset local customizations";
       resetBtn.onclick = ()=>{
-        if(confirm("Remove all locally added/edited entries?")){
+        if(confirm("Clear local additions, edits, and deletions?")){
           setUserItems([]);
+          setOverrides({});
+          setDeletions([]);
           render();
         }
       };
+
       bar.append(addBtn, resetBtn);
+
+      // If this is a custom body, allow removing it (does not delete exams)
+      if(getUserBodies().includes(groupName)){
+        const removeBodyBtn = document.createElement("button");
+        removeBodyBtn.className = "btn ghost";
+        removeBodyBtn.textContent = "Remove Body (custom)";
+        removeBodyBtn.onclick = ()=>{
+          if(confirm(`Remove custom body "${groupName}"? This won't delete any exams.`)){
+            setUserBodies(getUserBodies().filter(b=>b!==groupName));
+            render();
+          }
+        };
+        bar.append(removeBodyBtn);
+      }
+
       section.appendChild(bar);
     }
 
@@ -227,19 +298,30 @@ function render(){
     btn.addEventListener("click", ()=>{
       const id = btn.getAttribute("data-id");
       const act = btn.getAttribute("data-act");
-      if(act==="del"){
+      if(act==="delUser"){
         const items = getUserItems().filter(x=>x.id!==id);
         setUserItems(items);
         render();
-      } else if(act==="edit"){
+      } else if(act==="editUser"){
         const item = getUserItems().find(x=>x.id===id);
-        if(item) openEditor(item);
+        if(item) openEditor(item, {mode:'user'});
+      } else if(act==="delStatic"){
+        const del = new Set(getDeletions());
+        del.add(id);
+        setDeletions([...del]);
+        render();
+      } else if(act==="editStatic"){
+        // find current effective static item
+        const item = normalizedStatic().find(x=>x.id===id);
+        if(item) openEditor(item, {mode:'static'});
       }
     });
   });
 }
 
 // ---------- Editor ----------
+let CURRENT_CONTEXT = { mode: 'new' }; // 'new' | 'user' | 'static'
+
 function setWindowSlots(type){
   editForm.querySelectorAll("[data-slot]").forEach(el=> el.style.display="none");
   const map = {date:"[data-slot='date']", month:"[data-slot='month']", quarter:"[data-slot='quarter']", half:"[data-slot='half']"};
@@ -247,7 +329,8 @@ function setWindowSlots(type){
   if(sel) editForm.querySelector(sel).style.display = "";
 }
 
-function openEditor(seed={}){
+function openEditor(seed={}, context={mode:'new'}){
+  CURRENT_CONTEXT = context;
   $("#dlgTitle").textContent = seed.id ? "Edit entry" : "Add entry";
   editForm.reset();
   editForm.body.value = seed.body || "";
@@ -280,7 +363,7 @@ function openEditor(seed={}){
       if(!confirm("This link does not look official (not gov.in/nic.in or allowlist). Keep anyway?")) return;
     }
 
-    const window = (()=> {
+    const winObj = (()=> {
       if(wtype==="date"){ if(!editForm.date.value) return {type:"tbd"}; return {type:"date", date: editForm.date.value}; }
       if(wtype==="month"){ if(!editForm.month.value) return {type:"tbd"}; return {type:"month", month: editForm.month.value}; }
       if(wtype==="quarter"){ return {type:"quarter", q: editForm.q.value, year: Number(editForm.qy.value)||2025}; }
@@ -288,15 +371,29 @@ function openEditor(seed={}){
       return {type:"tbd"};
     })();
 
-    const userItems = getUserItems();
-    if(seed.id){
-      const idx = userItems.findIndex(x=>x.id===seed.id);
-      if(idx>-1){ userItems[idx] = { ...userItems[idx], body, exam, cycle, window, official, notes }; }
+    if(CURRENT_CONTEXT.mode === 'user' && seed.id){
+      const arr = getUserItems();
+      const idx = arr.findIndex(x=>x.id===seed.id);
+      if(idx>-1){ arr[idx] = { ...arr[idx], body, exam, cycle, window: winObj, official, notes }; }
+      setUserItems(arr);
+    } else if(CURRENT_CONTEXT.mode === 'static' && seed.id){
+      const ov = getOverrides();
+      ov[seed.id] = { body, exam, cycle, window: winObj, official, notes };
+      setOverrides(ov);
+      // If this id was previously deleted, un-delete it on edit
+      const dels = new Set(getDeletions()); if(dels.has(seed.id)){ dels.delete(seed.id); setDeletions([...dels]); }
     } else {
       const id = `user-${Date.now().toString(36)}`;
-      userItems.push({ id, body, exam, cycle, window, official, notes });
+      const arr = getUserItems();
+      arr.push({ id, body, exam, cycle, window: winObj, official, notes });
+      setUserItems(arr);
     }
-    setUserItems(userItems);
+
+    // Ensure custom body exists if user typed a new one
+    if(!uniqueBodiesAcrossAll().includes(body)){
+      setUserBodies([...new Set([...getUserBodies(), body])]);
+    }
+
     editDlg.close(); render();
   };
 }
@@ -327,11 +424,19 @@ exportCsvBtn.addEventListener("click", ()=>{
   URL.revokeObjectURL(a.href);
 });
 
+// Export/Import full app data (user items, bodies, overrides, deletions)
 exportJsonBtn.addEventListener("click", ()=>{
-  const blob = new Blob([JSON.stringify(getUserItems(), null, 2)], {type:"application/json"});
+  const payload = {
+    version: 2,
+    userItems: getUserItems(),
+    userBodies: getUserBodies(),
+    overrides: getOverrides(),
+    deletions: getDeletions()
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], {type:"application/json"});
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
-  a.download = "user-items.json";
+  a.download = "recruit-bodywise-appdata.json";
   a.click();
   URL.revokeObjectURL(a.href);
 });
@@ -341,15 +446,44 @@ importJsonInp.addEventListener("change", async (e)=>{
   if(!f) return;
   try{
     const txt = await f.text();
-    const arr = JSON.parse(txt);
-    if(!Array.isArray(arr)) throw new Error("Invalid JSON: expected array");
-    // simple shape check
-    arr.forEach(o=>{ if(!o.body || !o.exam) throw new Error("Each item must have 'body' and 'exam'"); });
-    // tag as user items with ids
-    const normalized = arr.map(o=> ({ id: o.id || `user-${crypto.randomUUID?.() || Date.now().toString(36)}`, ...o }));
-    setUserItems(normalized); render();
+    const data = JSON.parse(txt);
+    // accept both old (array of items) and new (app data) formats
+    if(Array.isArray(data)){
+      // legacy: only user items
+      setUserItems(data.map(o=> ({ id: o.id || `user-${crypto.randomUUID?.() || Date.now().toString(36)}`, ...o })));
+    } else {
+      if(data.userItems) setUserItems(data.userItems);
+      if(data.userBodies) setUserBodies(data.userBodies);
+      if(data.overrides) setOverrides(data.overrides);
+      if(data.deletions) setDeletions(data.deletions);
+    }
+    render();
     alert("Imported!");
   }catch(err){ alert("Import failed: " + err.message); }
+});
+
+// Add Body button
+addBodyBtn.addEventListener("click", ()=>{
+  const name = prompt("Enter new Recruitment Body name (e.g., JKPSC, GPSC):");
+  if(!name) return;
+  const body = name.trim();
+  if(!body) return;
+  const set = new Set(uniqueBodiesAcrossAll());
+  if(set.has(body)) { alert("Body already exists."); return; }
+  setUserBodies([...getUserBodies(), body]);
+  if(ADMIN.enabled && confirm("Add an exam under this body now?")){
+     openEditor({ body }, {mode:'new'});
+  } else {
+     render();
+  }
+});
+
+// Toggle Admin
+toggleAdminBtn.addEventListener("click", ()=>{
+  ADMIN.enabled = !ADMIN.enabled;
+  toggleAdminBtn.classList.toggle("ghost", !ADMIN.enabled);
+  toggleAdminBtn.textContent = ADMIN.enabled ? "Admin Mode: ON" : "Admin Mode";
+  render();
 });
 
 // ---------- Init ----------
@@ -357,11 +491,4 @@ importJsonInp.addEventListener("change", async (e)=>{
   updated.textContent = new Date().toLocaleString();
   await loadStatic();
   render();
-  // Toggle Admin button
-  toggleAdminBtn.addEventListener("click", ()=>{
-    ADMIN.enabled = !ADMIN.enabled;
-    toggleAdminBtn.classList.toggle("ghost", !ADMIN.enabled);
-    toggleAdminBtn.textContent = ADMIN.enabled ? "Admin Mode: ON" : "Admin Mode";
-    render();
-  });
 })();
