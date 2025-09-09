@@ -10,6 +10,7 @@ const windowSel = $("#window");
 const updated = $("#updated");
 const toggleAdminBtn = $("#toggleAdmin");
 const addBodyBtn = $("#addBody");
+const addExamBtn = $("#addExam"); // NEW: top-bar Add Exam
 const editDlg = $("#editDlg");
 const editForm = $("#editForm");
 const exportCsvBtn = $("#exportCsv");
@@ -208,7 +209,7 @@ function applyFilters(list){
       if(!reg || reg !== regionSel.value.toLowerCase()) return false;
     }
 
-    // NEW: optional Local Type filter (if you added #localType in HTML)
+    // optional Local Type filter
     if(levelSel.value === "local" && localTypeSel && currentFilters.localType !== "__all__"){
       const orgt = (x.orgtype || "other");
       if(orgt !== currentFilters.localType) return false;
@@ -220,23 +221,21 @@ function applyFilters(list){
 }
 
 function render(){
-  // Apply ALL filters, including Level/Region/LocalType
+  // Apply ALL filters
   const items = applyFilters(normalizeItems())
     .sort((a,b)=> sortKey(a.window)-sortKey(b.window) || a.body.localeCompare(b.body) || a.exam.localeCompare(b.exam));
 
   // Build Body options from the FILTERED items only
   const bodies = bodiesFrom(items);
 
-  // Regions list also built from FILTERED items (so irrelevant regions disappear)
+  // Regions list also built from FILTERED items
   const regions = uniqueRegions(items);
   if(regionSel){
     regionSel.innerHTML = `<option value="__all__">All States/UT</option>` + regions.map(r=>`<option value="${r}">${r}</option>`).join("");
     if(currentFilters.region !== "__all__" && !regions.includes(currentFilters.region)){
       currentFilters.region = "__all__"; regionSel.value = "__all__";
     }
-    // Hide region when not applicable
-    const showRegion = (levelSel.value === "state" || levelSel.value === "local");
-    regionSel.style.display = showRegion ? "" : "none";
+    regionSel.style.display = (levelSel.value === "state" || levelSel.value === "local") ? "" : "none";
   }
 
   // If the current Body is not in the filtered set, reset to All
@@ -247,7 +246,7 @@ function render(){
     bodySel.value = currentFilters.body;
   }
 
-  // Nothing matches? Show a clean empty state
+  // Nothing matches? Empty state
   if(!items.length){
     mount.innerHTML = `<div class="empty">No results for the current filters. Try changing Level/State/Body.</div>`;
     return;
@@ -257,7 +256,7 @@ function render(){
   const groups = {};
   items.forEach(it => { (groups[it.body] ||= []).push(it); });
 
-  // Render ONLY bodies that have items (so non-matching bodies disappear)
+  // Render ONLY bodies with items
   const frag = document.createDocumentFragment();
   const overrides = getOverrides();
 
@@ -319,13 +318,52 @@ function render(){
     });
 
     section.appendChild(table);
+
+    // NEW: Admin bar under each body
+    if (ADMIN.enabled) {
+      const bar = document.createElement("div");
+      bar.style = "display:flex; gap:8px; padding:10px 12px; background:#0f1427; border-top:1px solid var(--line)";
+      const addBtn = document.createElement("button");
+      addBtn.className = "btn";
+      addBtn.textContent = `Add under ${groupName}`;
+      addBtn.onclick = () => {
+        openEditor(
+          { body: groupName, level: inferLevel(groupName), region: inferRegion(groupName) },
+          { mode: "new" }
+        );
+      };
+      const resetBtn = document.createElement("button");
+      resetBtn.className = "btn ghost";
+      resetBtn.textContent = "Reset local customizations";
+      resetBtn.onclick = () => {
+        if (confirm("Clear local additions, edits, and deletions?")) {
+          setUserItems([]); setOverrides({}); setDeletions([]); render();
+        }
+      };
+      bar.append(addBtn, resetBtn);
+
+      if (getUserBodies().includes(groupName)) {
+        const removeBodyBtn = document.createElement("button");
+        removeBodyBtn.className = "btn ghost";
+        removeBodyBtn.textContent = "Remove Body (custom)";
+        removeBodyBtn.onclick = () => {
+          if (confirm(`Remove custom body "${groupName}"? This won't delete any exams.`)) {
+            setUserBodies(getUserBodies().filter(b=>b!==groupName)); render();
+          }
+        };
+        bar.append(removeBodyBtn);
+      }
+
+      section.appendChild(bar);
+    }
+
     frag.appendChild(section);
   });
 
   mount.innerHTML = "";
   mount.appendChild(frag);
 
-  // Row actions (unchanged)
+  // Row actions
   mount.querySelectorAll("[data-act]").forEach(btn=>{
     btn.addEventListener("click", ()=>{
       const id = btn.getAttribute("data-id");
@@ -448,7 +486,7 @@ bodySel.addEventListener("change", e=>{ currentFilters.body = e.target.value; re
 levelSel.addEventListener("change", e=>{
   currentFilters.level = e.target.value;
 
-  // Reset Body to "All" whenever Level changes (prevents empty UI)
+  // Reset Body to "All" whenever Level changes
   currentFilters.body = "__all__";
   bodySel.value = "__all__";
 
@@ -479,6 +517,22 @@ if(localTypeSel){
 }
 
 document.addEventListener("keydown", (ev)=>{ if(ev.key === "/"){ ev.preventDefault(); q.focus(); } });
+
+// NEW: Top-bar Add Exam (prefills from current filters)
+if (addExamBtn) {
+  addExamBtn.addEventListener("click", () => {
+    const seed = {};
+    if (currentFilters.body && currentFilters.body !== "__all__") seed.body = currentFilters.body;
+    if (levelSel && levelSel.value !== "__all__") seed.level = levelSel.value;
+    if (regionSel && regionSel.value !== "__all__" && (seed.level === "state" || seed.level === "local")) {
+      seed.region = regionSel.value;
+    }
+    if (seed.level === "local" && localTypeSel && localTypeSel.value !== "__all__") {
+      seed.orgtype = localTypeSel.value;
+    }
+    openEditor(seed, { mode: "new" });
+  });
+}
 
 exportCsvBtn.addEventListener("click", ()=>{
   const rows = applyFilters(normalizeItems())
