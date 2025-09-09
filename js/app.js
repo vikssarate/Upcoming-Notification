@@ -205,41 +205,47 @@ function applyFilters(list){
     return s.includes(q.value.trim().toLowerCase());
   });
 }
-
 function render(){
+  // Apply ALL filters, including Level and Region
   const items = applyFilters(normalizeItems())
     .sort((a,b)=> sortKey(a.window)-sortKey(b.window) || a.body.localeCompare(b.body) || a.exam.localeCompare(b.exam));
 
-  // dropdowns
-  const bodies = uniqueBodiesAcrossAll();
-  bodySel.innerHTML = `<option value="__all__">All bodies</option>` + bodies.map(b=>`<option value="${b}">${b}</option>`).join("");
-  if(currentFilters.body && bodies.includes(currentFilters.body)) bodySel.value=currentFilters.body;
+  // Build Body options from the FILTERED items only
+  const bodies = bodiesFrom(items);
 
-  // level + region options
-  levelSel.value = currentFilters.level;
-  const regions = uniqueRegions(normalizeItems());
+  // Regions list also built from FILTERED items (so irrelevant regions disappear)
+  const regions = uniqueRegions(items);
   regionSel.innerHTML = `<option value="__all__">All States/UT</option>` + regions.map(r=>`<option value="${r}">${r}</option>`).join("");
-  if(currentFilters.region && regions.includes(currentFilters.region)) regionSel.value=currentFilters.region;
+  if(currentFilters.region !== "__all__" && !regions.includes(currentFilters.region)){
+    currentFilters.region = "__all__"; regionSel.value = "__all__";
+  }
 
-  // group by body
+  // If the current Body is not in the filtered set, reset to All
+  bodySel.innerHTML = `<option value="__all__">All bodies</option>` + bodies.map(b=>`<option value="${b}">${b}</option>`).join("");
+  if(!bodies.includes(currentFilters.body)){
+    currentFilters.body = "__all__"; bodySel.value = "__all__";
+  } else {
+    bodySel.value = currentFilters.body;
+  }
+
+  // Group by body (only filtered items exist here)
   const groups = {};
   items.forEach(it => { (groups[it.body] ||= []).push(it); });
 
-  if(!bodies.length){
-    mount.innerHTML = `<div class="empty">No data yet. Click <b>Add Body</b> then add exams in Admin Mode.</div>`;
+  // Nothing matches? Show a clean empty state
+  if(!items.length){
+    mount.innerHTML = `<div class="empty">No results for the current filters. Try changing Level/State/Body.</div>`;
     return;
   }
 
+  // Render ONLY bodies that have items (so non-matching bodies disappear)
   const frag = document.createDocumentFragment();
   const overrides = getOverrides();
 
-  bodies.forEach(groupName=>{
-    // respect body filter
-    if(bodySel.value !== "__all__" && groupName !== bodySel.value) return;
-
+  Object.keys(groups).sort((a,b)=>a.localeCompare(b)).forEach(groupName=>{
     const section = document.createElement("section");
     section.className = "group";
-    const count = (groups[groupName]?.length || 0);
+    const count = groups[groupName].length;
     const title = document.createElement("h2");
     title.innerHTML = `<span>${groupName}</span><span class="small">${count} item(s)</span>`;
     section.appendChild(title);
@@ -254,7 +260,7 @@ function render(){
     `;
     const tbody = table.querySelector("tbody");
 
-    (groups[groupName] || []).forEach(item=>{
+    groups[groupName].forEach(item=>{
       const tr = document.createElement("tr");
       const officialOk = isOfficial(item.official);
       const overridden = !!overrides[item.id];
@@ -280,7 +286,7 @@ function render(){
           ${officialOk ? "" : `<span class="badge bad" title="Link not in official allowlist">Check</span>`}
         </td>
         <td class="row-actions">
-          <a href="${makeICS(item)}" download="${item.id}.ics" title="Add to Calendar">Add to Calendar</a>
+          <a href="${makeICS(item)}" download="${item.id}.ics">Add to Calendar</a>
           ${ADMIN.enabled ? `<button data-act="${isUser ? 'editUser' : 'editStatic'}" data-id="${item.id}">Edit</button>` : ""}
           ${ADMIN.enabled ? `<button data-act="${isUser ? 'delUser' : 'delStatic'}" data-id="${item.id}">Delete</button>` : ""}
         </td>
@@ -289,37 +295,13 @@ function render(){
     });
 
     section.appendChild(table);
-
-    if(!(groups[groupName]?.length)){
-      const empty = document.createElement("div");
-      empty.className = "empty";
-      empty.textContent = "No exams added for this body yet.";
-      section.appendChild(empty);
-    }
-
-    if(ADMIN.enabled){
-      const bar = document.createElement("div");
-      bar.style = "display:flex; gap:8px; padding:10px 12px; background:#0f1427; border-top:1px solid var(--line)";
-      const addBtn = document.createElement("button"); addBtn.className="btn"; addBtn.textContent=`Add under ${groupName}`;
-      addBtn.onclick = ()=> openEditor({body:groupName}, {mode:'new'});
-      const resetBtn = document.createElement("button"); resetBtn.className="btn ghost"; resetBtn.textContent="Reset local customizations";
-      resetBtn.onclick = ()=>{ if(confirm("Clear local additions, edits, and deletions?")){ setUserItems([]); setOverrides({}); setDeletions([]); render(); } };
-      bar.append(addBtn, resetBtn);
-      if(getUserBodies().includes(groupName)){
-        const removeBodyBtn = document.createElement("button"); removeBodyBtn.className="btn ghost"; removeBodyBtn.textContent="Remove Body (custom)";
-        removeBodyBtn.onclick = ()=>{ if(confirm(`Remove custom body "${groupName}"? This won't delete any exams.`)){ setUserBodies(getUserBodies().filter(b=>b!==groupName)); render(); } };
-        bar.append(removeBodyBtn);
-      }
-      section.appendChild(bar);
-    }
-
     frag.appendChild(section);
   });
 
   mount.innerHTML = "";
   mount.appendChild(frag);
 
-  // Row actions
+  // Row actions (unchanged)
   mount.querySelectorAll("[data-act]").forEach(btn=>{
     btn.addEventListener("click", ()=>{
       const id = btn.getAttribute("data-id");
