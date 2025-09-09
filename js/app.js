@@ -418,7 +418,12 @@ bodySel.addEventListener("change", e=>{ currentFilters.body = e.target.value; re
 
 levelSel.addEventListener("change", e=>{
   currentFilters.level = e.target.value;
-  // when switching level, reset region if not State/Local
+
+  // Reset Body to "All" whenever Level changes (prevents empty UI)
+  currentFilters.body = "__all__";
+  bodySel.value = "__all__";
+
+  // When switching to Central, Region doesn't apply
   if(currentFilters.level === "__all__" || currentFilters.level === "central"){
     currentFilters.region = "__all__"; regionSel.value="__all__";
   }
