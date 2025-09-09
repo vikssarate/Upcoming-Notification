@@ -1,0 +1,75 @@
+:root{
+  --bg:#0f1220; --card:#171b2b; --ink:#eef1ff; --muted:#a3acd0; --line:#2a3052; --accent:#72a3ff;
+  --ok:#79e08e; --warn:#ffd166; --bad:#ff7b7b;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0; background:var(--bg); color:var(--ink);
+  font-family: system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,"Helvetica Neue",Arial;
+}
+header,footer{padding:12px 16px; display:flex; align-items:center; gap:12px; flex-wrap:wrap}
+header h1{margin:0; font-size:18px; font-weight:700}
+.wrap{max-width:1100px; margin:0 auto; padding:12px}
+.controls{
+  display:grid; grid-template-columns: 1fr 170px 170px auto; gap:10px; align-items:center
+}
+.btn-row{display:flex; gap:8px; justify-content:flex-end; flex-wrap:wrap}
+input[type="search"], select{
+  width:100%; padding:10px 12px; border-radius:10px; border:1px solid var(--line);
+  background:var(--card); color:var(--ink); outline:none;
+}
+.btn{
+  appearance:none; border:none; padding:10px 12px; border-radius:10px; cursor:pointer; font-weight:600;
+  background:var(--accent); color:#0b1222; box-shadow:0 0 0 1px #0003;
+}
+.btn.ghost{ background:transparent; color:var(--ink); border:1px solid var(--line)}
+.btn.filelike{position:relative}
+.btn.filelike input{position:absolute; inset:0; opacity:0; cursor:pointer}
+.badge{display:inline-block; padding:2px 8px; border-radius:999px; font-size:12px; background:#233; color:var(--muted); border:1px solid var(--line)}
+.group{
+  margin-top:18px; border-radius:14px; overflow:hidden; border:1px solid var(--line)
+}
+.group>h2{
+  margin:0; padding:10px 14px; background:#12162a; color:#cfe0ff; font-size:14px; letter-spacing:.2px;
+  display:flex; align-items:center; gap:8px; justify-content:space-between
+}
+.table{width:100%; border-collapse:separate; border-spacing:0}
+.table th, .table td{padding:10px 12px; text-align:left; border-bottom:1px solid var(--line)}
+.table th{font-size:12px; color:var(--muted); background:#11162a; position:sticky; top:0; z-index:1}
+.row-actions a, .row-actions button{
+  margin-right:8px; text-decoration:none; font-size:12px; padding:6px 8px; border-radius:8px; border:1px solid var(--line);
+  background:#12182e; color:var(--ink); display:inline-flex; align-items:center; gap:6px; cursor:pointer
+}
+.kv{display:inline-flex; gap:4px; align-items:center}
+kbd{
+  background:#000; color:#fff; padding:2px 6px; border-radius:6px; border:1px solid #333; font-size:12px
+}
+footer{justify-content:space-between; color:var(--muted); border-top:1px solid var(--line)}
+hr.sep{border:0; border-top:1px dashed var(--line); margin:14px 0}
+
+dialog{
+  border:1px solid var(--line); border-radius:12px; background:var(--card); color:var(--ink);
+  width:min(680px, 92vw); padding:0;
+}
+dialog header{padding:12px 14px; border-bottom:1px solid var(--line)}
+dialog form{padding:12px 14px; display:grid; grid-template-columns: 1fr 1fr; gap:10px}
+dialog form .full{grid-column:1/-1}
+dialog label{font-size:12px; color:var(--muted)}
+dialog input, dialog select, dialog textarea{
+  width:100%; padding:10px 12px; border-radius:10px; border:1px solid var(--line);
+  background:#0f1427; color:var(--ink); outline:none;
+}
+dialog .inline{display:flex; gap:8px}
+dialog .actions{display:flex; justify-content:flex-end; gap:10px; padding:12px 14px; border-top:1px solid var(--line)}
+.empty{
+  padding:20px; color:var(--muted); font-size:14px; border-top:1px dashed var(--line); background:#0f1427
+}
+.small{font-size:12px; color:var(--muted)}
+
+.warn{color:var(--warn)}
+.bad{color:var(--bad)}
+
+@media (max-width:900px){
+  .controls{grid-template-columns: 1fr 1fr}
+}
