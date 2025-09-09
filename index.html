@@ -20,9 +20,19 @@
 <div class="wrap">
   <div class="controls">
     <input id="q" type="search" placeholder="Search exam / cycle / notes…" autocomplete="off" />
-    <select id="body">
-      <option value="__all__">All bodies</option>
+    <select id="body"><option value="__all__">All bodies</option></select>
+
+    <!-- NEW: Govt. Level filter -->
+    <select id="level">
+      <option value="__all__">All levels</option>
+      <option value="central">Central Govt.</option>
+      <option value="state">State Govt.</option>
+      <option value="local">Local Govt.</option>
     </select>
+
+    <!-- NEW: State/UT filter (used for State/Local) -->
+    <select id="region"><option value="__all__">All States/UT</option></select>
+
     <select id="window">
       <option value="__all__">Any window</option>
       <option value="date">Exact date</option>
@@ -31,6 +41,7 @@
       <option value="half">Half-year</option>
       <option value="tbd">TBD</option>
     </select>
+
     <div class="btn-row">
       <button class="btn" id="addBody" title="Create a new recruitment body">Add Body</button>
       <button class="btn ghost" id="toggleAdmin" title="Local, device-only edits">Admin Mode</button>
@@ -64,7 +75,6 @@
 </footer>
 
 <!-- Add / Edit dialog (Admin Mode) -->
-<!-- …everything above unchanged… -->
 <dialog id="editDlg">
   <header><strong id="dlgTitle">Add entry</strong></header>
   <form id="editForm" method="dialog">
@@ -80,6 +90,21 @@
       <label>Cycle / Year</label>
       <input name="cycle" placeholder="e.g., 2025, 2025–26">
     </div>
+
+    <!-- NEW: Level + Region (State/UT or Local area) -->
+    <div>
+      <label>Govt. Level</label>
+      <select name="level">
+        <option value="central">Central Govt.</option>
+        <option value="state">State Govt.</option>
+        <option value="local">Local Govt.</option>
+      </select>
+    </div>
+    <div data-slot-level="region">
+      <label>State/UT or Local area</label>
+      <input name="region" placeholder="e.g., Maharashtra / BMC / Pune">
+    </div>
+
     <div>
       <label>Window Type</label>
       <select name="wtype">
@@ -90,7 +115,6 @@
         <option value="tbd">TBD</option>
       </select>
     </div>
-
     <div data-slot="date">
       <label>Exact Date</label>
       <input type="date" name="date">
@@ -119,10 +143,10 @@
       </div>
     </div>
 
-    <!-- NEW: rotation history input -->
+    <!-- If you already added Rotation support earlier, keep this field; otherwise ignore -->
     <div class="full">
       <label>Past notifications (comma-separated)</label>
-      <input name="history" placeholder="YYYY-MM-DD, YYYY-MM, or YYYY (e.g., 2023-07-10, 2021-08, 2019)">
+      <input name="history" placeholder="YYYY-MM-DD, YYYY-MM, or YYYY">
     </div>
 
     <div class="full">
@@ -139,7 +163,7 @@
     </div>
   </form>
 </dialog>
-<!-- …everything below unchanged… -->
+
 <script defer src="js/app.js"></script>
 <script>
   if ('serviceWorker' in navigator) {
