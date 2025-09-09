@@ -19,26 +19,22 @@ const ADMIN = { enabled: false };
 // localStorage keys
 const LSK_USER_ITEMS = "recruit_bodywise_userItems_v2";
 const LSK_USER_BODIES = "recruit_bodywise_userBodies_v1";
-const LSK_OVERRIDES   = "recruit_bodywise_overrides_v1";   // { id: {partial fields} }
-const LSK_DELETIONS   = "recruit_bodywise_deletions_v1";   // [ids]
+const LSK_OVERRIDES   = "recruit_bodywise_overrides_v1";
+const LSK_DELETIONS   = "recruit_bodywise_deletions_v1";
 
-// helpers
 const getJSON = (k, d) => { try { return JSON.parse(localStorage.getItem(k) || JSON.stringify(d)); } catch { return d; } };
 const setJSON = (k, v) => localStorage.setItem(k, JSON.stringify(v));
 
 function getUserItems(){ return getJSON(LSK_USER_ITEMS, []); }
 function setUserItems(v){ setJSON(LSK_USER_ITEMS, v); }
-
 function getUserBodies(){ return getJSON(LSK_USER_BODIES, []); }
 function setUserBodies(v){ setJSON(LSK_USER_BODIES, v); }
-
 function getOverrides(){ return getJSON(LSK_OVERRIDES, {}); }
 function setOverrides(v){ setJSON(LSK_OVERRIDES, v); }
-
 function getDeletions(){ return getJSON(LSK_DELETIONS, []); }
 function setDeletions(v){ setJSON(LSK_DELETIONS, v); }
 
-// Allowlist for "official" domains. (Extend as needed.)
+// ---------- Official allowlist ----------
 const allowedHosts = new Set([
   "ssc.gov.in","upsc.gov.in","ibps.in","rrbcdg.gov.in",
   "mpsc.gov.in","bpsc.bih.nic.in","tnpsc.gov.in","psc.nic.in",
@@ -49,7 +45,6 @@ const allowedHosts = new Set([
 
 // ---------- Data ----------
 let STATIC = []; // from data/exams.json
-
 async function loadStatic(){
   try{
     const res = await fetch("./data/exams.json", { cache: "no-store" });
@@ -60,7 +55,7 @@ async function loadStatic(){
   }
 }
 
-// Apply local overrides/deletions to shipped (static) items
+// apply overrides/deletions to shipped items
 function normalizedStatic(){
   const ov = getOverrides();
   const del = new Set(getDeletions());
@@ -68,17 +63,14 @@ function normalizedStatic(){
     .filter(x => !del.has(x.id))
     .map(x => ov[x.id] ? { ...x, ...ov[x.id], id: x.id } : x);
 }
-
-function normalizeItems(){
-  return [...normalizedStatic(), ...getUserItems()];
-}
-
+function normalizeItems(){ return [...normalizedStatic(), ...getUserItems()]; }
 function uniqueBodiesAcrossAll(){
   const fromItems = [...new Set(normalizeItems().map(x=>x.body))];
   const customs = getUserBodies();
   return [...new Set([...fromItems, ...customs])].sort((a,b)=>a.localeCompare(b));
 }
 
+// ---------- Dates & rotation ----------
 function labelWindow(w){
   if(!w||!w.type) return "TBD";
   switch(w.type){
@@ -94,7 +86,6 @@ function labelWindow(w){
     default: return "TBD";
   }
 }
-
 function sortKey(w){
   if(!w) return 9e12;
   if(w.type==="date") return +new Date(w.date+"T00:00:00");
@@ -112,16 +103,58 @@ function sortKey(w){
   }
   return 9e12;
 }
-
-function hostFrom(url){
-  try { return new URL(url).host.toLowerCase(); }
-  catch { return ""; }
+function approxDateFromWindow(w){
+  if(!w) return null;
+  if(w.type==="date") return new Date(w.date+"T09:00:00");
+  if(w.type==="month"){ const [y,m]=w.month.split("-").map(Number); return new Date(y, m-1, 1, 9); }
+  if(w.type==="quarter"){ const qmap={Q1:0,Q2:3,Q3:6,Q4:9}; return new Date(w.year, qmap[w.q]??0, 1, 9); }
+  if(w.type==="half"){ const hmap={H1:0,H2:6}; return new Date(w.year, hmap[w.half]??0, 1, 9); }
+  return null;
 }
+function parseHistoryDate(s){
+  const t = String(s||"").trim();
+  if(/^\d{4}-\d{2}-\d{2}$/.test(t)) return new Date(t+"T09:00:00");
+  if(/^\d{4}-\d{2}$/.test(t)){ const [y,m]=t.split("-").map(Number); return new Date(y, m-1, 1, 9); }
+  if(/^\d{4}$/.test(t)) return new Date(Number(t), 0, 1, 9);
+  return null;
+}
+function historyDates(item){
+  const arr = Array.isArray(item.history) ? item.history : [];
+  return arr.map(parseHistoryDate).filter(d=>d && isFinite(+d)).sort((a,b)=>a-b);
+}
+function yearsBetween(a,b){
+  const ms = Math.abs(+b - +a);
+  return ms / (365.25*24*3600*1000);
+}
+function fmtYears(y){
+  if(y==null || !isFinite(y)) return "—";
+  if(y<1) return `${Math.round(y*12)} mo`;
+  return `${(Math.round(y*10)/10).toFixed(1)} y`;
+}
+function rotationInfo(item){
+  const next = approxDateFromWindow(item.window);
+  if(!next) return {next:null,last:null,gap:null,avg:null};
+  const hist = historyDates(item);
+  if(!hist.length) return {next,last:null,gap:null,avg:null};
+  // last past <= next (or just the latest past)
+  let last = hist.filter(d => d <= next).slice(-1)[0] || hist.slice(-1)[0];
+  const gap = yearsBetween(last, next);
+  // average of consecutive gaps
+  let avg = null;
+  if(hist.length>=2){
+    const diffs = [];
+    for(let i=1;i<hist.length;i++) diffs.push(yearsBetween(hist[i-1], hist[i]));
+    avg = diffs.reduce((a,b)=>a+b,0)/diffs.length;
+  }
+  return {next,last,gap,avg};
+}
+
+// ---------- misc ----------
+function hostFrom(url){ try { return new URL(url).host.toLowerCase(); } catch { return ""; } }
 function isOfficial(url){
   const h = hostFrom(url);
   return h.endsWith(".gov.in") || h.endsWith(".nic.in") || allowedHosts.has(h);
 }
-
 function makeICS(item){
   const s = sortKey(item.window);
   const d = isFinite(s)? new Date(s) : new Date();
@@ -129,39 +162,35 @@ function makeICS(item){
   const day = String(item.window?.type==="date" ? new Date(item.window.date).getDate() : 1).padStart(2,"0");
   const start = `${y}${m}${day}T090000`;
   const end   = `${y}${m}${day}T100000`;
-
   const summary = `${item.body}: ${item.exam} (${item.cycle||""}) — Tentative Notification`;
   const desc = `Tentative notification window: ${labelWindow(item.window)}. Verify on official site: ${item.official}`;
-
   const ics = [
     "BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//Recruit Bodywise//EN",
     "BEGIN:VEVENT",
     `UID:${item.id}@recruit-bodywise.local`,
-    `DTSTAMP:${start}`,
-    `DTSTART:${start}`,
-    `DTEND:${end}`,
-    `SUMMARY:${summary}`,
-    `DESCRIPTION:${desc.replace(/\n/g," ")}`,
+    `DTSTAMP:${start}`,`DTSTART:${start}`,`DTEND:${end}`,
+    `SUMMARY:${summary}`,`DESCRIPTION:${desc.replace(/\n/g," ")}`,
     "END:VEVENT","END:VCALENDAR"
   ].join("\r\n");
-
   const blob = new Blob([ics], {type:"text/calendar"});
   return URL.createObjectURL(blob);
 }
-
 function toCSV(rows){
   const esc = s => `"${String(s??"").replace(/"/g,'""')}"`;
-  const head = ["Body","Exam","Cycle","Window","Official","Notes"];
+  const head = ["Body","Exam","Cycle","Window","Rotation (next gap)","Avg rotation","Official","Notes"];
   const lines = [head.map(esc).join(",")];
   rows.forEach(r=>{
-    lines.push([r.body, r.exam, r.cycle||"", labelWindow(r.window), r.official||"", r.notes||""].map(esc).join(","));
+    const ri = rotationInfo(r);
+    lines.push([
+      r.body, r.exam, r.cycle||"", labelWindow(r.window),
+      fmtYears(ri.gap), fmtYears(ri.avg), r.official||"", r.notes||""
+    ].map(esc).join(","));
   });
   return lines.join("\r\n");
 }
 
 // ---------- Rendering ----------
 const currentFilters = { body: "__all__" };
-
 function render(){
   const items = normalizeItems()
     .filter(x=>{
@@ -172,18 +201,14 @@ function render(){
     })
     .sort((a,b)=> sortKey(a.window)-sortKey(b.window) || a.body.localeCompare(b.body) || a.exam.localeCompare(b.exam));
 
-  // Group actual items
   const groups = {};
   items.forEach(it => { (groups[it.body] ||= []).push(it); });
 
-  // Inject body filter options (union with custom bodies)
   const bodies = uniqueBodiesAcrossAll();
   bodySel.innerHTML = `<option value="__all__">All bodies</option>` + bodies.map(b=>`<option value="${b}">${b}</option>`).join("");
   if(currentFilters.body && bodies.includes(currentFilters.body)) bodySel.value=currentFilters.body;
 
-  // Build UI sections for union of groups + custom bodies (so empty bodies show)
-  const unionBodies = bodies;
-  if(!unionBodies.length){
+  if(!bodies.length){
     mount.innerHTML = `<div class="empty">No data yet. Click <b>Add Body</b> then add exams in Admin Mode.</div>`;
     return;
   }
@@ -191,8 +216,7 @@ function render(){
   const frag = document.createDocumentFragment();
   const overrides = getOverrides();
 
-  unionBodies.forEach(groupName=>{
-    // Skip empty group if filtered to another body
+  bodies.forEach(groupName=>{
     if(bodySel.value !== "__all__" && groupName !== bodySel.value) return;
 
     const section = document.createElement("section");
@@ -206,7 +230,7 @@ function render(){
     table.className = "table";
     table.innerHTML = `
       <thead><tr>
-        <th>Exam</th><th>Cycle</th><th>Window (Tentative)</th><th>Official</th><th style="min-width:260px">Actions</th>
+        <th>Exam</th><th>Cycle</th><th>Rotation</th><th>Window (Tentative)</th><th>Official</th><th style="min-width:260px">Actions</th>
       </tr></thead>
       <tbody></tbody>
     `;
@@ -217,6 +241,10 @@ function render(){
       const officialOk = isOfficial(item.official);
       const overridden = !!overrides[item.id];
       const isUser = item.id?.startsWith?.("user-");
+      const ri = rotationInfo(item);
+
+      const rotText = ri.gap ? `≈ ${fmtYears(ri.gap)}${ri.avg? ` (avg ${fmtYears(ri.avg)})`: ""}` : "—";
+      const rotTitle = `Last: ${ri.last? ri.last.toLocaleDateString(): "—"} • Next: ${ri.next? ri.next.toLocaleDateString(): "—"}${ri.avg? ` • Avg: ${fmtYears(ri.avg)}`:""}`;
 
       tr.innerHTML = `
         <td>
@@ -224,6 +252,7 @@ function render(){
           <div class="small">${item.notes? item.notes: ""} ${overridden ? `<span class="badge warn" title="Locally edited">Edited</span>` : ""}</div>
         </td>
         <td>${item.cycle||""}</td>
+        <td title="${rotTitle}">${rotText}</td>
         <td>${labelWindow(item.window)}</td>
         <td>
           <a href="${item.official}" target="_blank" rel="noopener" class="badge">Official</a>
@@ -240,8 +269,7 @@ function render(){
 
     section.appendChild(table);
 
-    const hasItems = !!(groups[groupName]?.length);
-    if(!hasItems){
+    if(!(groups[groupName]?.length)){
       const empty = document.createElement("div");
       empty.className = "empty";
       empty.textContent = "No exams added for this body yet.";
@@ -251,39 +279,16 @@ function render(){
     if(ADMIN.enabled){
       const bar = document.createElement("div");
       bar.style = "display:flex; gap:8px; padding:10px 12px; background:#0f1427; border-top:1px solid var(--line)";
-      const addBtn = document.createElement("button");
-      addBtn.className = "btn";
-      addBtn.textContent = `Add under ${groupName}`;
+      const addBtn = document.createElement("button"); addBtn.className="btn"; addBtn.textContent=`Add under ${groupName}`;
       addBtn.onclick = ()=> openEditor({body:groupName}, {mode:'new'});
-
-      const resetBtn = document.createElement("button");
-      resetBtn.className = "btn ghost";
-      resetBtn.textContent = "Reset local customizations";
-      resetBtn.onclick = ()=>{
-        if(confirm("Clear local additions, edits, and deletions?")){
-          setUserItems([]);
-          setOverrides({});
-          setDeletions([]);
-          render();
-        }
-      };
-
+      const resetBtn = document.createElement("button"); resetBtn.className="btn ghost"; resetBtn.textContent="Reset local customizations";
+      resetBtn.onclick = ()=>{ if(confirm("Clear local additions, edits, and deletions?")){ setUserItems([]); setOverrides({}); setDeletions([]); render(); } };
       bar.append(addBtn, resetBtn);
-
-      // If this is a custom body, allow removing it (does not delete exams)
       if(getUserBodies().includes(groupName)){
-        const removeBodyBtn = document.createElement("button");
-        removeBodyBtn.className = "btn ghost";
-        removeBodyBtn.textContent = "Remove Body (custom)";
-        removeBodyBtn.onclick = ()=>{
-          if(confirm(`Remove custom body "${groupName}"? This won't delete any exams.`)){
-            setUserBodies(getUserBodies().filter(b=>b!==groupName));
-            render();
-          }
-        };
+        const removeBodyBtn = document.createElement("button"); removeBodyBtn.className="btn ghost"; removeBodyBtn.textContent="Remove Body (custom)";
+        removeBodyBtn.onclick = ()=>{ if(confirm(`Remove custom body "${groupName}"? This won't delete any exams.`)){ setUserBodies(getUserBodies().filter(b=>b!==groupName)); render(); } };
         bar.append(removeBodyBtn);
       }
-
       section.appendChild(bar);
     }
 
@@ -299,21 +304,13 @@ function render(){
       const id = btn.getAttribute("data-id");
       const act = btn.getAttribute("data-act");
       if(act==="delUser"){
-        const items = getUserItems().filter(x=>x.id!==id);
-        setUserItems(items);
-        render();
+        setUserItems(getUserItems().filter(x=>x.id!==id)); render();
       } else if(act==="editUser"){
-        const item = getUserItems().find(x=>x.id===id);
-        if(item) openEditor(item, {mode:'user'});
+        const item = getUserItems().find(x=>x.id===id); if(item) openEditor(item, {mode:'user'});
       } else if(act==="delStatic"){
-        const del = new Set(getDeletions());
-        del.add(id);
-        setDeletions([...del]);
-        render();
+        const del = new Set(getDeletions()); del.add(id); setDeletions([...del]); render();
       } else if(act==="editStatic"){
-        // find current effective static item
-        const item = normalizedStatic().find(x=>x.id===id);
-        if(item) openEditor(item, {mode:'static'});
+        const item = normalizedStatic().find(x=>x.id===id); if(item) openEditor(item, {mode:'static'});
       }
     });
   });
@@ -321,14 +318,12 @@ function render(){
 
 // ---------- Editor ----------
 let CURRENT_CONTEXT = { mode: 'new' }; // 'new' | 'user' | 'static'
-
 function setWindowSlots(type){
   editForm.querySelectorAll("[data-slot]").forEach(el=> el.style.display="none");
   const map = {date:"[data-slot='date']", month:"[data-slot='month']", quarter:"[data-slot='quarter']", half:"[data-slot='half']"};
   const sel = map[type];
   if(sel) editForm.querySelector(sel).style.display = "";
 }
-
 function openEditor(seed={}, context={mode:'new'}){
   CURRENT_CONTEXT = context;
   $("#dlgTitle").textContent = seed.id ? "Edit entry" : "Add entry";
@@ -338,6 +333,8 @@ function openEditor(seed={}, context={mode:'new'}){
   editForm.cycle.value = seed.cycle || "";
   editForm.official.value = seed.official || "";
   editForm.notes.value = seed.notes || "";
+  // prefill history
+  editForm.history.value = Array.isArray(seed.history) ? seed.history.join(", ") : "";
   const w = seed.window || {type:"date"};
   editForm.wtype.value = w.type || "date";
   setWindowSlots(w.type);
@@ -357,12 +354,12 @@ function openEditor(seed={}, context={mode:'new'}){
     const official = editForm.official.value.trim();
     const notes = editForm.notes.value.trim();
     const wtype = editForm.wtype.value;
+    const hist = editForm.history.value.split(",").map(s=>s.trim()).filter(Boolean); // store as strings
 
     if(!body || !exam || !official){ alert("Body, Exam, and Official link are required."); return; }
     if(!isOfficial(official)){
       if(!confirm("This link does not look official (not gov.in/nic.in or allowlist). Keep anyway?")) return;
     }
-
     const winObj = (()=> {
       if(wtype==="date"){ if(!editForm.date.value) return {type:"tbd"}; return {type:"date", date: editForm.date.value}; }
       if(wtype==="month"){ if(!editForm.month.value) return {type:"tbd"}; return {type:"month", month: editForm.month.value}; }
@@ -374,30 +371,26 @@ function openEditor(seed={}, context={mode:'new'}){
     if(CURRENT_CONTEXT.mode === 'user' && seed.id){
       const arr = getUserItems();
       const idx = arr.findIndex(x=>x.id===seed.id);
-      if(idx>-1){ arr[idx] = { ...arr[idx], body, exam, cycle, window: winObj, official, notes }; }
+      if(idx>-1){ arr[idx] = { ...arr[idx], body, exam, cycle, window: winObj, official, notes, history: hist }; }
       setUserItems(arr);
     } else if(CURRENT_CONTEXT.mode === 'static' && seed.id){
       const ov = getOverrides();
-      ov[seed.id] = { body, exam, cycle, window: winObj, official, notes };
+      ov[seed.id] = { body, exam, cycle, window: winObj, official, notes, history: hist };
       setOverrides(ov);
-      // If this id was previously deleted, un-delete it on edit
       const dels = new Set(getDeletions()); if(dels.has(seed.id)){ dels.delete(seed.id); setDeletions([...dels]); }
     } else {
       const id = `user-${Date.now().toString(36)}`;
       const arr = getUserItems();
-      arr.push({ id, body, exam, cycle, window: winObj, official, notes });
+      arr.push({ id, body, exam, cycle, window: winObj, official, notes, history: hist });
       setUserItems(arr);
     }
 
-    // Ensure custom body exists if user typed a new one
     if(!uniqueBodiesAcrossAll().includes(body)){
       setUserBodies([...new Set([...getUserBodies(), body])]);
     }
-
     editDlg.close(); render();
   };
 }
-
 editForm.wtype.addEventListener("change", (e)=> setWindowSlots(e.target.value));
 
 // ---------- Events ----------
@@ -424,10 +417,10 @@ exportCsvBtn.addEventListener("click", ()=>{
   URL.revokeObjectURL(a.href);
 });
 
-// Export/Import full app data (user items, bodies, overrides, deletions)
+// Export/Import full app data
 exportJsonBtn.addEventListener("click", ()=>{
   const payload = {
-    version: 2,
+    version: 3,
     userItems: getUserItems(),
     userBodies: getUserBodies(),
     overrides: getOverrides(),
@@ -440,43 +433,41 @@ exportJsonBtn.addEventListener("click", ()=>{
   a.click();
   URL.revokeObjectURL(a.href);
 });
-
 importJsonInp.addEventListener("change", async (e)=>{
   const f = e.target.files?.[0];
   if(!f) return;
   try{
     const txt = await f.text();
     const data = JSON.parse(txt);
-    // accept both old (array of items) and new (app data) formats
     if(Array.isArray(data)){
-      // legacy: only user items
-      setUserItems(data.map(o=> ({ id: o.id || `user-${crypto.randomUUID?.() || Date.now().toString(36)}`, ...o })));
+      setUserItems(data.map(o=> ({ id: o.id || `user-${Date.now().toString(36)}`, ...o })));
     } else {
       if(data.userItems) setUserItems(data.userItems);
       if(data.userBodies) setUserBodies(data.userBodies);
       if(data.overrides) setOverrides(data.overrides);
       if(data.deletions) setDeletions(data.deletions);
     }
-    render();
-    alert("Imported!");
+    render(); alert("Imported!");
   }catch(err){ alert("Import failed: " + err.message); }
 });
 
 // Add Body button
-addBodyBtn.addEventListener("click", ()=>{
-  const name = prompt("Enter new Recruitment Body name (e.g., JKPSC, GPSC):");
-  if(!name) return;
-  const body = name.trim();
-  if(!body) return;
-  const set = new Set(uniqueBodiesAcrossAll());
-  if(set.has(body)) { alert("Body already exists."); return; }
-  setUserBodies([...getUserBodies(), body]);
-  if(ADMIN.enabled && confirm("Add an exam under this body now?")){
-     openEditor({ body }, {mode:'new'});
-  } else {
-     render();
-  }
-});
+if(addBodyBtn){
+  addBodyBtn.addEventListener("click", ()=>{
+    const name = prompt("Enter new Recruitment Body name (e.g., JKPSC, GPSC):");
+    if(!name) return;
+    const body = name.trim();
+    if(!body) return;
+    const set = new Set(uniqueBodiesAcrossAll());
+    if(set.has(body)) { alert("Body already exists."); return; }
+    setUserBodies([...getUserBodies(), body]);
+    if(ADMIN.enabled && confirm("Add an exam under this body now?")){
+      openEditor({ body }, {mode:'new'});
+    } else {
+      render();
+    }
+  });
+}
 
 // Toggle Admin
 toggleAdminBtn.addEventListener("click", ()=>{
