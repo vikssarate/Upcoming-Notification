@@ -64,6 +64,7 @@
 </footer>
 
 <!-- Add / Edit dialog (Admin Mode) -->
+<!-- …everything above unchanged… -->
 <dialog id="editDlg">
   <header><strong id="dlgTitle">Add entry</strong></header>
   <form id="editForm" method="dialog">
@@ -89,6 +90,7 @@
         <option value="tbd">TBD</option>
       </select>
     </div>
+
     <div data-slot="date">
       <label>Exact Date</label>
       <input type="date" name="date">
@@ -116,6 +118,13 @@
         <input type="number" name="hy" min="2020" max="2100" value="2025">
       </div>
     </div>
+
+    <!-- NEW: rotation history input -->
+    <div class="full">
+      <label>Past notifications (comma-separated)</label>
+      <input name="history" placeholder="YYYY-MM-DD, YYYY-MM, or YYYY (e.g., 2023-07-10, 2021-08, 2019)">
+    </div>
+
     <div class="full">
       <label>Official Link (must be official domain)</label>
       <input name="official" required placeholder="https://… (gov.in / nic.in / official)">
@@ -130,7 +139,7 @@
     </div>
   </form>
 </dialog>
-
+<!-- …everything below unchanged… -->
 <script defer src="js/app.js"></script>
 <script>
   if ('serviceWorker' in navigator) {
