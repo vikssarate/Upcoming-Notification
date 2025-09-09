@@ -1,55 +1,26 @@
 [
-  { "id":"ssc-cgl-2025", "body":"SSC", "exam":"Combined Graduate Level (CGL)", "cycle":"2025",
-    "window":{ "type":"month", "month":"2025-05" }, "official":"https://ssc.gov.in",
+  { "id":"ssc-cgl-2025","body":"SSC","exam":"Combined Graduate Level (CGL)","cycle":"2025",
+    "level":"central","window":{"type":"month","month":"2025-05"},"official":"https://ssc.gov.in",
     "notes":"Tentative window based on prior cycles." },
 
-  { "id":"ssc-chsl-2025", "body":"SSC", "exam":"CHSL (10+2)", "cycle":"2025",
-    "window":{ "type":"month", "month":"2025-04" }, "official":"https://ssc.gov.in",
-    "notes":"Month indicative." },
+  { "id":"upsc-ias-2026","body":"UPSC","exam":"Civil Services (Prelims) – Notification","cycle":"2026",
+    "level":"central","window":{"type":"month","month":"2025-12"},"official":"https://upsc.gov.in" },
 
-  { "id":"ssc-je-2026", "body":"SSC", "exam":"Junior Engineer (JE)", "cycle":"2026",
-    "window":{ "type":"quarter", "q":"Q1", "year":2026 }, "official":"https://ssc.gov.in",
-    "notes":"Quarter target." },
+  { "id":"ibps-po-2025","body":"IBPS","exam":"PO/MT – Notification","cycle":"2025",
+    "level":"central","window":{"type":"month","month":"2025-07"},"official":"https://www.ibps.in" },
 
-  { "id":"upsc-ias-2026", "body":"UPSC", "exam":"Civil Services (Prelims) – Notification", "cycle":"2026",
-    "window":{ "type":"month", "month":"2025-12" }, "official":"https://upsc.gov.in",
-    "notes":"UPSC calendar patterns." },
+  { "id":"rrb-ntpc-2025","body":"RRB","exam":"NTPC – Notification","cycle":"2025",
+    "level":"central","window":{"type":"half","half":"H1","year":2025},"official":"https://rrbcdg.gov.in" },
 
-  { "id":"upsc-nda1-2026", "body":"UPSC", "exam":"NDA & NA (I) – Notification", "cycle":"2026",
-    "window":{ "type":"month", "month":"2025-12" }, "official":"https://upsc.gov.in",
-    "notes":"Indicative." },
+  { "id":"mpsc-cse-2025","body":"MPSC","exam":"Combined (Rajyaseva) – Notification","cycle":"2025",
+    "level":"state","region":"Maharashtra","window":{"type":"quarter","q":"Q4","year":2025},
+    "official":"https://mpsc.gov.in" },
 
-  { "id":"ibps-po-2025", "body":"IBPS", "exam":"PO/MT – Notification", "cycle":"2025",
-    "window":{ "type":"month", "month":"2025-07" }, "official":"https://www.ibps.in",
-    "notes":"Usual July/August window." },
+  { "id":"bpsc-cce-2025","body":"BPSC","exam":"CCE – Notification","cycle":"2025",
+    "level":"state","region":"Bihar","window":{"type":"quarter","q":"Q3","year":2025},
+    "official":"https://www.bpsc.bih.nic.in" },
 
-  { "id":"ibps-clerk-2025", "body":"IBPS", "exam":"Clerk – Notification", "cycle":"2025",
-    "window":{ "type":"month", "month":"2025-06" }, "official":"https://www.ibps.in" },
-
-  { "id":"rrb-ntpc-2025", "body":"RRB", "exam":"NTPC – Notification", "cycle":"2025",
-    "window":{ "type":"half", "half":"H1", "year":2025 }, "official":"https://rrbcdg.gov.in",
-    "notes":"Centralised RRB portal." },
-
-  { "id":"rrb-groupd-2025", "body":"RRB", "exam":"Group D – Notification", "cycle":"2025",
-    "window":{ "type":"half", "half":"H2", "year":2025 }, "official":"https://rrbcdg.gov.in" },
-
-  { "id":"mpsc-cse-2025", "body":"MPSC", "exam":"Combined (Rajyaseva) – Notification", "cycle":"2025",
-    "window":{ "type":"quarter", "q":"Q4", "year":2025 }, "official":"https://mpsc.gov.in" },
-
-  { "id":"mpsc-combined-2025", "body":"MPSC", "exam":"Group B/C Combined – Notification", "cycle":"2025",
-    "window":{ "type":"quarter", "q":"Q1", "year":2026 }, "official":"https://mpsc.gov.in",
-    "notes":"For 2025–26 cycle." },
-
-  { "id":"bpsc-cce-2025", "body":"BPSC", "exam":"Combined Competitive Exam (CCE) – Notification", "cycle":"2025",
-    "window":{ "type":"quarter", "q":"Q3", "year":2025 }, "official":"https://www.bpsc.bih.nic.in" },
-
-  { "id":"tnpsc-group1-2025", "body":"TNPSC", "exam":"Group I – Notification", "cycle":"2025",
-    "window":{ "type":"tbd" }, "official":"https://www.tnpsc.gov.in",
-    "notes":"Awaiting calendar." },
-
-  { "id":"ssc-mts-2025", "body":"SSC", "exam":"MTS – Notification", "cycle":"2025",
-    "window":{ "type":"date", "date":"2025-03-10" }, "official":"https://ssc.gov.in" },
-
-  { "id":"upsc-ese-2026", "body":"UPSC", "exam":"Engineering Services (ESE) – Notification", "cycle":"2026",
-    "window":{ "type":"month", "month":"2025-09" }, "official":"https://upsc.gov.in" }
+  { "id":"tnpsc-group1-2025","body":"TNPSC","exam":"Group I – Notification","cycle":"2025",
+    "level":"state","region":"Tamil Nadu","window":{"type":"tbd"},
+    "official":"https://www.tnpsc.gov.in" }
 ]
