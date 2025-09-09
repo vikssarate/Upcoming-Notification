@@ -1,0 +1,7 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Redirecting…</title>
+<script>
+  // Send all 404s back to root for a SPA-like experience
+  location.replace(location.origin + location.pathname.replace(/\/[^\/]*$/, '/') + '');
+</script>
