@@ -70,6 +70,11 @@ dialog .actions{display:flex; justify-content:flex-end; gap:10px; padding:12px 1
 .warn{color:var(--warn)}
 .bad{color:var(--bad)}
 
-@media (max-width:900px){
-  .controls{grid-template-columns: 1fr 1fr}
+.controls{
+  display:grid;
+  grid-template-columns: 1fr 150px 160px 160px 150px auto; /* search, body, level, state/UT, window, buttons */
+  gap:10px; align-items:center;
+}
+@media (max-width:1000px){
+  .controls{ grid-template-columns: 1fr 1fr 1fr }
 }
