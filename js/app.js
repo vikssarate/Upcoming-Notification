@@ -114,6 +114,9 @@ function sortKey(w){
   if(w.type==="half"){ const hmap={H1:0,H2:6}; return +new Date(w.year, hmap[w.half]??0, 1); }
   return 9e12;
 }
+function bodiesFrom(list){
+  return [...new Set(list.map(x => x.body))].sort((a,b)=>a.localeCompare(b));
+}
 // Rotation helpers (kept compact)
 function approxDateFromWindow(w){
   if(!w) return null;
