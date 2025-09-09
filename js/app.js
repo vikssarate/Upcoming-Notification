@@ -3,8 +3,9 @@ const $ = (s) => document.querySelector(s);
 const mount = $("#mount");
 const q = $("#q");
 const bodySel = $("#body");
-const levelSel = $("#level");     // NEW
-const regionSel = $("#region");   // NEW
+const levelSel = $("#level");     // Level filter
+const regionSel = $("#region");   // State/UT filter (for State/Local)
+const localTypeSel = $("#localType"); // OPTIONAL: Local type filter (if present)
 const windowSel = $("#window");
 const updated = $("#updated");
 const toggleAdminBtn = $("#toggleAdmin");
@@ -40,7 +41,10 @@ const allowedHosts = new Set([
   "mpsc.gov.in","bpsc.bih.nic.in","tnpsc.gov.in","psc.nic.in",
   "ppsc.gov.in","hpsc.gov.in","gpsc.gujarat.gov.in","kpsc.kar.nic.in",
   "rpsc.rajasthan.gov.in","tspsc.gov.in","wbpsc.gov.in",
-  "jkpsc.nic.in","opsc.gov.in","uppsc.up.nic.in","jpsc.gov.in"
+  "jkpsc.nic.in","opsc.gov.in","uppsc.up.nic.in","jpsc.gov.in",
+  // Local bodies examples:
+  "portal.mcgm.gov.in",           // BMC
+  "punezp.mkcl.org"               // Pune Zilla Parishad portal
 ]);
 
 // ---------- Data ----------
@@ -189,7 +193,7 @@ function toCSV(rows){
 }
 
 // ---------- Rendering ----------
-const currentFilters = { body: "__all__", level: "__all__", region: "__all__" };
+const currentFilters = { body: "__all__", level: "__all__", region: "__all__", localType: "__all__" };
 
 function applyFilters(list){
   return list.filter(x=>{
@@ -204,12 +208,19 @@ function applyFilters(list){
       if(!reg || reg !== regionSel.value.toLowerCase()) return false;
     }
 
+    // NEW: optional Local Type filter (if you added #localType in HTML)
+    if(levelSel.value === "local" && localTypeSel && currentFilters.localType !== "__all__"){
+      const orgt = (x.orgtype || "other");
+      if(orgt !== currentFilters.localType) return false;
+    }
+
     const s = `${x.body} ${x.exam} ${x.cycle||""} ${x.notes||""}`.toLowerCase();
     return s.includes(q.value.trim().toLowerCase());
   });
 }
+
 function render(){
-  // Apply ALL filters, including Level and Region
+  // Apply ALL filters, including Level/Region/LocalType
   const items = applyFilters(normalizeItems())
     .sort((a,b)=> sortKey(a.window)-sortKey(b.window) || a.body.localeCompare(b.body) || a.exam.localeCompare(b.exam));
 
@@ -218,9 +229,14 @@ function render(){
 
   // Regions list also built from FILTERED items (so irrelevant regions disappear)
   const regions = uniqueRegions(items);
-  regionSel.innerHTML = `<option value="__all__">All States/UT</option>` + regions.map(r=>`<option value="${r}">${r}</option>`).join("");
-  if(currentFilters.region !== "__all__" && !regions.includes(currentFilters.region)){
-    currentFilters.region = "__all__"; regionSel.value = "__all__";
+  if(regionSel){
+    regionSel.innerHTML = `<option value="__all__">All States/UT</option>` + regions.map(r=>`<option value="${r}">${r}</option>`).join("");
+    if(currentFilters.region !== "__all__" && !regions.includes(currentFilters.region)){
+      currentFilters.region = "__all__"; regionSel.value = "__all__";
+    }
+    // Hide region when not applicable
+    const showRegion = (levelSel.value === "state" || levelSel.value === "local");
+    regionSel.style.display = showRegion ? "" : "none";
   }
 
   // If the current Body is not in the filtered set, reset to All
@@ -231,15 +247,15 @@ function render(){
     bodySel.value = currentFilters.body;
   }
 
-  // Group by body (only filtered items exist here)
-  const groups = {};
-  items.forEach(it => { (groups[it.body] ||= []).push(it); });
-
   // Nothing matches? Show a clean empty state
   if(!items.length){
     mount.innerHTML = `<div class="empty">No results for the current filters. Try changing Level/State/Body.</div>`;
     return;
   }
+
+  // Group by body (only filtered items exist here)
+  const groups = {};
+  items.forEach(it => { (groups[it.body] ||= []).push(it); });
 
   // Render ONLY bodies that have items (so non-matching bodies disappear)
   const frag = document.createDocumentFragment();
@@ -271,7 +287,12 @@ function render(){
       const ri = rotationInfo(item);
       const lvl = item.level || inferLevel(item.body);
       const reg = item.region || (lvl!=="central" ? inferRegion(item.body) : "");
-      const levelBadge = lvl==="central" ? "Central" : (lvl==="state" ? `State${reg? " — "+reg : ""}` : `Local${reg? " — "+reg : ""}`);
+      const typeLabel = (lvl==="local" && item.orgtype)
+        ? item.orgtype.replace(/_/g," ").replace(/\b\w/g,c=>c.toUpperCase())
+        : null;
+      const levelBadge = (lvl==="central")
+        ? "Central"
+        : (lvl==="state" ? `State${reg? " — "+reg : ""}` : `Local${typeLabel? " — "+typeLabel : ""}${reg? " — "+reg : ""}`);
       const rotText = ri.gap ? `≈ ${fmtYears(ri.gap)}${ri.avg? ` (avg ${fmtYears(ri.avg)})`: ""}` : "—";
       const rotTitle = `Last: ${ri.last? ri.last.toLocaleDateString(): "—"} • Next: ${ri.next? ri.next.toLocaleDateString(): "—"}${ri.avg? ` • Avg: ${fmtYears(ri.avg)}`:""}`;
 
@@ -324,10 +345,13 @@ function setWindowSlots(type){
   const map = {date:"[data-slot='date']", month:"[data-slot='month']", quarter:"[data-slot='quarter']", half:"[data-slot='half']"};
   const sel = map[type]; if(sel) editForm.querySelector(sel).style.display = "";
 }
+// Extend to show Region for State/Local and OrgType only for Local (if those inputs exist in HTML)
 function setLevelSlots(level){
-  const show = (level==="state" || level==="local");
+  const showRegion = (level==="state" || level==="local");
   const regionDiv = editForm.querySelector("[data-slot-level='region']");
-  if(regionDiv) regionDiv.style.display = show ? "" : "none";
+  if(regionDiv) regionDiv.style.display = showRegion ? "" : "none";
+  const orgtypeDiv = editForm.querySelector("[data-slot-level='orgtype']");
+  if(orgtypeDiv) orgtypeDiv.style.display = (level==="local") ? "" : "none";
 }
 
 function openEditor(seed={}, context={mode:'new'}){
@@ -342,11 +366,13 @@ function openEditor(seed={}, context={mode:'new'}){
   editForm.notes.value = seed.notes || "";
   editForm.history.value = Array.isArray(seed.history) ? seed.history.join(", ") : "";
 
-  // Level/Region
+  // Level/Region/OrgType
   const lvl = seed.level || inferLevel(seed.body);
   editForm.level.value = lvl;
-  editForm.region.value = seed.region || (lvl!=="central" ? inferRegion(seed.body) : "");
   setLevelSlots(lvl);
+  editForm.region.value = seed.region || (lvl!=="central" ? inferRegion(seed.body) : "");
+  const orgtypeField = editForm.querySelector("[name='orgtype']");
+  if(orgtypeField) orgtypeField.value = seed.orgtype || "municipal_corporation";
   editForm.level.addEventListener("change", e=> setLevelSlots(e.target.value), {once:true});
 
   // Window
@@ -370,6 +396,8 @@ function openEditor(seed={}, context={mode:'new'}){
     const notes = editForm.notes.value.trim();
     const level = editForm.level.value;
     const region = (level==="state" || level==="local") ? (editForm.region.value||"").trim() : "";
+    const orgtypeField = editForm.querySelector("[name='orgtype']");
+    const orgtype = (level==="local" && orgtypeField) ? orgtypeField.value : undefined;
     const hist = editForm.history.value.split(",").map(s=>s.trim()).filter(Boolean);
     const wtype = editForm.wtype.value;
 
@@ -389,16 +417,17 @@ function openEditor(seed={}, context={mode:'new'}){
     if(CURRENT_CONTEXT.mode === 'user' && seed.id){
       const arr = getUserItems();
       const idx = arr.findIndex(x=>x.id===seed.id);
-      if(idx>-1){ arr[idx] = { ...arr[idx], body, exam, cycle, window, official, notes, level, region, history: hist }; }
+      if(idx>-1){ arr[idx] = { ...arr[idx], body, exam, cycle, window, official, notes, level, region, history: hist, ...(orgtype? {orgtype}: {}) }; }
       setUserItems(arr);
     } else if(CURRENT_CONTEXT.mode === 'static' && seed.id){
-      const ov = getOverrides(); ov[seed.id] = { body, exam, cycle, window, official, notes, level, region, history: hist };
+      const ov = getOverrides();
+      ov[seed.id] = { body, exam, cycle, window, official, notes, level, region, history: hist, ...(orgtype? {orgtype}: {}) };
       setOverrides(ov);
       const dels = new Set(getDeletions()); if(dels.has(seed.id)){ dels.delete(seed.id); setDeletions([...dels]); }
     } else {
       const id = `user-${Date.now().toString(36)}`;
       const arr = getUserItems();
-      arr.push({ id, body, exam, cycle, window, official, notes, level, region, history: hist });
+      arr.push({ id, body, exam, cycle, window, official, notes, level, region, history: hist, ...(orgtype? {orgtype}: {}) });
       setUserItems(arr);
     }
 
@@ -423,13 +452,31 @@ levelSel.addEventListener("change", e=>{
   currentFilters.body = "__all__";
   bodySel.value = "__all__";
 
-  // When switching to Central, Region doesn't apply
-  if(currentFilters.level === "__all__" || currentFilters.level === "central"){
-    currentFilters.region = "__all__"; regionSel.value="__all__";
+  // Region applies only to State/Local
+  const isCentral = (currentFilters.level === "__all__" || currentFilters.level === "central");
+  if(isCentral){
+    currentFilters.region = "__all__";
+    if(regionSel){ regionSel.value="__all__"; regionSel.style.display = "none"; }
+  } else {
+    if(regionSel){ regionSel.style.display = ""; }
   }
+
+  // Local Type applies only to Local
+  if(localTypeSel){
+    const showLocalType = (currentFilters.level === "local");
+    localTypeSel.style.display = showLocalType ? "" : "none";
+    if(!showLocalType){
+      currentFilters.localType = "__all__";
+      localTypeSel.value = "__all__";
+    }
+  }
+
   render();
 });
 regionSel.addEventListener("change", e=>{ currentFilters.region = e.target.value; render(); });
+if(localTypeSel){
+  localTypeSel.addEventListener("change", e=>{ currentFilters.localType = e.target.value; render(); });
+}
 
 document.addEventListener("keydown", (ev)=>{ if(ev.key === "/"){ ev.preventDefault(); q.focus(); } });
 
@@ -445,7 +492,7 @@ exportCsvBtn.addEventListener("click", ()=>{
 
 exportJsonBtn.addEventListener("click", ()=>{
   const payload = {
-    version: 4,
+    version: 5,
     userItems: getUserItems(),
     userBodies: getUserBodies(),
     overrides: getOverrides(),
@@ -472,14 +519,14 @@ importJsonInp.addEventListener("change", async (e)=>{
 });
 
 addBodyBtn.addEventListener("click", ()=>{
-  const name = prompt("Enter new Recruitment Body name (e.g., JKPSC, GPSC):");
+  const name = prompt("Enter new Recruitment Body name (e.g., Pune Zilla Parishad, BMC):");
   if(!name) return;
   const body = name.trim(); if(!body) return;
   const set = new Set(uniqueBodiesAcrossAll());
   if(set.has(body)) { alert("Body already exists."); return; }
   setUserBodies([...getUserBodies(), body]);
   if(ADMIN.enabled && confirm("Add an exam under this body now?")){
-     openEditor({ body }, {mode:'new'});
+     openEditor({ body, level: "local" }, {mode:'new'}); // default to Local
   } else {
      render();
   }
@@ -497,5 +544,10 @@ toggleAdminBtn.addEventListener("click", ()=>{
 (async function init(){
   updated.textContent = new Date().toLocaleString();
   await loadStatic();
+
+  // Initialize visibility of region/localType on first load
+  if(regionSel){ regionSel.style.display = (levelSel.value==="state" || levelSel.value==="local") ? "" : "none"; }
+  if(localTypeSel){ localTypeSel.style.display = (levelSel.value==="local") ? "" : "none"; }
+
   render();
 })();
