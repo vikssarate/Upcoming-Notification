@@ -32,11 +32,12 @@
       <option value="tbd">TBD</option>
     </select>
     <div class="btn-row">
+      <button class="btn" id="addBody" title="Create a new recruitment body">Add Body</button>
       <button class="btn ghost" id="toggleAdmin" title="Local, device-only edits">Admin Mode</button>
       <button class="btn" id="exportCsv">Export CSV</button>
-      <button class="btn ghost" id="exportJson">Export JSON</button>
+      <button class="btn ghost" id="exportJson">Export App Data</button>
       <label class="btn ghost filelike">
-        Import JSON
+        Import App Data
         <input id="importJson" type="file" accept="application/json" hidden />
       </label>
     </div>
@@ -45,8 +46,8 @@
   <div id="mount"></div>
 
   <p class="small">
-    Tip: Press <kbd>/</kbd> to focus search. Admin additions are saved to your device (localStorage).  
-    For permanent changes, edit <code>data/exams.json</code> and push to GitHub.
+    Tip: Press <kbd>/</kbd> to focus search. Admin additions/edits/deletions are saved locally (this device).  
+    For permanent changes, edit <code>data/exams.json</code> in GitHub.
   </p>
 
   <hr class="sep">
