@@ -278,45 +278,59 @@ function render(){
     `;
     const tbody = table.querySelector("tbody");
 
-    groups[groupName].forEach(item=>{
-      const tr = document.createElement("tr");
-      const officialOk = isOfficial(item.official);
-      const overridden = !!overrides[item.id];
-      const isUser = item.id?.startsWith?.("user-");
-      const ri = rotationInfo(item);
-      const lvl = item.level || inferLevel(item.body);
-      const reg = item.region || (lvl!=="central" ? inferRegion(item.body) : "");
-      const typeLabel = (lvl==="local" && item.orgtype)
-        ? item.orgtype.replace(/_/g," ").replace(/\b\w/g,c=>c.toUpperCase())
-        : null;
-      const levelBadge = (lvl==="central")
-        ? "Central"
-        : (lvl==="state" ? `State${reg? " — "+reg : ""}` : `Local${typeLabel? " — "+typeLabel : ""}${reg? " — "+reg : ""}`);
-      const rotText = ri.gap ? `≈ ${fmtYears(ri.gap)}${ri.avg? ` (avg ${fmtYears(ri.avg)})`: ""}` : "—";
-      const rotTitle = `Last: ${ri.last? ri.last.toLocaleDateString(): "—"} • Next: ${ri.next? ri.next.toLocaleDateString(): "—"}${ri.avg? ` • Avg: ${fmtYears(ri.avg)}`:""}`;
+// Sort exams ASC inside this body:
+// 1) by tentative window (earliest first)
+// 2) then by numeric cycle (if present)
+// 3) then by exam name (A→Z)
+const rows = [...groups[groupName]].sort((a,b)=>{
+  const byWin = sortKey(a.window) - sortKey(b.window);
+  if (byWin) return byWin;
 
-      tr.innerHTML = `
-        <td>
-          <div style="font-weight:600">${item.exam}</div>
-          <div class="small">${item.notes? item.notes: ""} ${overridden ? `<span class="badge warn" title="Locally edited">Edited</span>` : ""}</div>
-        </td>
-        <td>${item.cycle||""}</td>
-        <td><span class="badge">${levelBadge}</span></td>
-        <td title="${rotTitle}">${rotText}</td>
-        <td>${labelWindow(item.window)}</td>
-        <td>
-          <a href="${item.official}" target="_blank" rel="noopener" class="badge">Official</a>
-          ${officialOk ? "" : `<span class="badge bad" title="Link not in official allowlist">Check</span>`}
-        </td>
-        <td class="row-actions">
-          <a href="${makeICS(item)}" download="${item.id}.ics">Add to Calendar</a>
-          ${ADMIN.enabled ? `<button data-act="${isUser ? 'editUser' : 'editStatic'}" data-id="${item.id}">Edit</button>` : ""}
-          ${ADMIN.enabled ? `<button data-act="${isUser ? 'delUser' : 'delStatic'}" data-id="${item.id}">Delete</button>` : ""}
-        </td>
-      `;
-      tbody.appendChild(tr);
-    });
+  const numA = parseInt(String(a.cycle||"").replace(/\D+/g,"")) || Number.POSITIVE_INFINITY;
+  const numB = parseInt(String(b.cycle||"").replace(/\D+/g,"")) || Number.POSITIVE_INFINITY;
+  if (numA !== numB) return numA - numB;
 
+  return (a.exam||"").localeCompare(b.exam||"");
+});
+
+rows.forEach(item=>{
+  const tr = document.createElement("tr");
+  const officialOk = isOfficial(item.official);
+  const overridden = !!overrides[item.id];
+  const isUser = item.id?.startsWith?.("user-");
+  const ri = rotationInfo(item);
+  const lvl = item.level || inferLevel(item.body);
+  const reg = item.region || (lvl!=="central" ? inferRegion(item.body) : "");
+  const typeLabel = (lvl==="local" && item.orgtype)
+    ? item.orgtype.replace(/_/g," ").replace(/\b\w/g,c=>c.toUpperCase())
+    : null;
+  const levelBadge = (lvl==="central")
+    ? "Central"
+    : (lvl==="state" ? `State${reg? " — "+reg : ""}` : `Local${typeLabel? " — "+typeLabel : ""}${reg? " — "+reg : ""}`);
+  const rotText = ri.gap ? `≈ ${fmtYears(ri.gap)}${ri.avg? ` (avg ${fmtYears(ri.avg)})`: ""}` : "—";
+  const rotTitle = `Last: ${ri.last? ri.last.toLocaleDateString(): "—"} • Next: ${ri.next? ri.next.toLocaleDateString(): "—"}${ri.avg? ` • Avg: ${fmtYears(ri.avg)}`:""}`;
+
+  tr.innerHTML = `
+    <td>
+      <div style="font-weight:600">${item.exam}</div>
+      <div class="small">${item.notes? item.notes: ""} ${overridden ? `<span class="badge warn" title="Locally edited">Edited</span>` : ""}</div>
+    </td>
+    <td>${item.cycle||""}</td>
+    <td><span class="badge">${levelBadge}</span></td>
+    <td title="${rotTitle}">${rotText}</td>
+    <td>${labelWindow(item.window)}</td>
+    <td>
+      <a href="${item.official}" target="_blank" rel="noopener" class="badge">Official</a>
+      ${officialOk ? "" : `<span class="badge bad" title="Link not in official allowlist">Check</span>`}
+    </td>
+    <td class="row-actions">
+      <a href="${makeICS(item)}" download="${item.id}.ics">Add to Calendar</a>
+      ${ADMIN.enabled ? `<button data-act="${isUser ? 'editUser' : 'editStatic'}" data-id="${item.id}">Edit</button>` : ""}
+      ${ADMIN.enabled ? `<button data-act="${isUser ? 'delUser' : 'delStatic'}" data-id="${item.id}">Delete</button>` : ""}
+    </td>
+  `;
+  tbody.appendChild(tr);
+});
     section.appendChild(table);
 
     // NEW: Admin bar under each body
